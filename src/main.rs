@@ -5,15 +5,10 @@ use clap::{Parser, Subcommand};
 use std::net::SocketAddr;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-mod client;
-mod crypto;
-mod protocol;
-mod server;
-mod verify;
-
-use client::TunnelClient;
-use crypto::{KeyPair, KEY_LEN};
-use server::TunnelServer;
+use noise_tunnel_rs::client::TunnelClient;
+use noise_tunnel_rs::crypto::{KeyPair, KEY_LEN};
+use noise_tunnel_rs::server::TunnelServer;
+use noise_tunnel_rs::verify;
 
 #[derive(Parser)]
 #[command(
