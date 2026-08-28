@@ -81,7 +81,9 @@ fn test_packet_tampering_detection() -> Result<()> {
     // Forsøk å dekryptere manipulert pakke
     let result = receiver.decrypt(&ciphertext, b"aad-metadata", 0);
     if result.is_ok() {
-        return Err(anyhow!("KRITISK SIKKERHETSFEIL: Manipulert pakke ble akseptert!"));
+        return Err(anyhow!(
+            "KRITISK SIKKERHETSFEIL: Manipulert pakke ble akseptert!"
+        ));
     }
     Ok(())
 }
@@ -95,7 +97,9 @@ fn test_replay_attack_rejection() -> Result<()> {
     // Avlytter forsøker å sende samme pakke (nonce 100) på nytt
     let replay_attempt = filter.validate_and_record(100);
     if replay_attempt.is_ok() {
-        return Err(anyhow!("KRITISK SIKKERHETSFEIL: Replay-pakke slapp gjennom filteret!"));
+        return Err(anyhow!(
+            "KRITISK SIKKERHETSFEIL: Replay-pakke slapp gjennom filteret!"
+        ));
     }
     Ok(())
 }

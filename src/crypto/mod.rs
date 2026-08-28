@@ -122,9 +122,9 @@ impl CipherState {
             aad: associated_data,
         };
 
-        let plaintext = cipher
-            .decrypt(cipher_nonce, payload)
-            .map_err(|_| anyhow!("AEAD-dekryptering feilet: Ugyldig MAC-tag eller manipulert pakke!"))?;
+        let plaintext = cipher.decrypt(cipher_nonce, payload).map_err(|_| {
+            anyhow!("AEAD-dekryptering feilet: Ugyldig MAC-tag eller manipulert pakke!")
+        })?;
 
         self.nonce += 1;
         Ok(plaintext)
@@ -194,7 +194,10 @@ mod tests {
         let alice_shared = diffie_hellman(&alice.private_key, &bob.public_key);
         let bob_shared = diffie_hellman(&bob.private_key, &alice.public_key);
 
-        assert_eq!(alice_shared, bob_shared, "Diffie-Hellman hemmeligheter må være identiske!");
+        assert_eq!(
+            alice_shared, bob_shared,
+            "Diffie-Hellman hemmeligheter må være identiske!"
+        );
     }
 
     #[test]
@@ -224,7 +227,10 @@ mod tests {
         ciphertext[0] ^= 0x01;
 
         let result = receiver.decrypt(&ciphertext, b"aad", 0);
-        assert!(result.is_err(), "Manipulert chiffertekst må avvises av AEAD MAC-sjekk!");
+        assert!(
+            result.is_err(),
+            "Manipulert chiffertekst må avvises av AEAD MAC-sjekk!"
+        );
     }
 
     #[test]

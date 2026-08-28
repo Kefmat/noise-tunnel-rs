@@ -8,9 +8,7 @@ use tracing::{error, info, warn};
 use crate::crypto::{
     derive_session_keys, diffie_hellman, CipherState, EphemeralKeyPair, KeyPair, KEY_LEN,
 };
-use crate::protocol::{
-    hash_handshake_state, MessageType, ReplayFilter, WireFrame, PROTOCOL_NAME,
-};
+use crate::protocol::{hash_handshake_state, MessageType, ReplayFilter, WireFrame, PROTOCOL_NAME};
 
 pub struct TunnelServer {
     keypair: KeyPair,
@@ -58,7 +56,10 @@ impl TunnelServer {
         // 1. Motta HandshakeInit fra klient
         let init_frame = WireFrame::read_from(&mut stream).await?;
         if init_frame.msg_type != MessageType::HandshakeInit {
-            return Err(anyhow!("Forventet HandshakeInit, mottok {:?}", init_frame.msg_type));
+            return Err(anyhow!(
+                "Forventet HandshakeInit, mottok {:?}",
+                init_frame.msg_type
+            ));
         }
 
         if init_frame.payload.len() < KEY_LEN + 16 {
@@ -71,7 +72,12 @@ impl TunnelServer {
 
         // 2. Beregn statisk Diffie-Hellman: DH(e_c, s_s)
         let dh_static = diffie_hellman(&server_keys.private_key, &client_ephemeral);
-        let h1 = hash_handshake_state(PROTOCOL_NAME, &client_ephemeral, &server_keys.public_key, None);
+        let h1 = hash_handshake_state(
+            PROTOCOL_NAME,
+            &client_ephemeral,
+            &server_keys.public_key,
+            None,
+        );
 
         // Verifiser init MAC
         let (k_init_c, _) = derive_session_keys(&dh_static, &h1)?;
@@ -129,14 +135,16 @@ impl TunnelServer {
             match frame.msg_type {
                 MessageType::DataPayload => {
                     replay_filter.validate_and_record(frame.nonce)?;
-                    let plaintext = rx_cipher.decrypt(&frame.payload, b"tunnel-data", frame.nonce)?;
+                    let plaintext =
+                        rx_cipher.decrypt(&frame.payload, b"tunnel-data", frame.nonce)?;
                     let msg_str = String::from_utf8_lossy(&plaintext);
                     info!("[Kryptert fra {}]: {}", peer_addr, msg_str);
 
                     // Send et kryptert ekko-svar tilbake
                     let reply_msg = format!("Server mottok: {}", msg_str);
                     let reply_nonce = tx_cipher.current_nonce();
-                    let encrypted_reply = tx_cipher.encrypt(reply_msg.as_bytes(), b"tunnel-data")?;
+                    let encrypted_reply =
+                        tx_cipher.encrypt(reply_msg.as_bytes(), b"tunnel-data")?;
 
                     let reply_frame =
                         WireFrame::new(MessageType::DataPayload, reply_nonce, encrypted_reply);
