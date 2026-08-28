@@ -54,9 +54,13 @@ enum Commands {
         #[arg(short, long)]
         server_pubkey: String,
 
-        /// Melding som skal krypteres og sendes over tunnelen
+        /// Melding som skal krypteres og sendes over tunnelen (brukes ved enkeltmelding)
         #[arg(short, long, default_value = "Hei fra sikker Rust-klient!")]
         message: String,
+
+        /// Start interaktiv live sesjon (REPL / strøm over kryptert tunnel)
+        #[arg(short, long)]
+        interactive: bool,
     },
 
     /// Kjor automatisk sikkerhets- og sarbarhetsverifikasjon
@@ -81,8 +85,14 @@ async fn main() -> Result<()> {
             let keypair = KeyPair::generate();
             println!("\nGenerert nytt X25519 nokkelpar:");
             println!("--------------------------------------------------");
-            println!("Privat Nokkel (Hold HEMMELIG): {}", hex::encode(keypair.private_key));
-            println!("Offentlig Nokkel (Deles fritt): {}", hex::encode(keypair.public_key));
+            println!(
+                "Privat Nokkel (Hold HEMMELIG): {}",
+                hex::encode(keypair.private_key)
+            );
+            println!(
+                "Offentlig Nokkel (Deles fritt): {}",
+                hex::encode(keypair.public_key)
+            );
             println!("--------------------------------------------------\n");
         }
 
@@ -119,6 +129,7 @@ async fn main() -> Result<()> {
             connect,
             server_pubkey,
             message,
+            interactive,
         } => {
             let pubkey_bytes = hex::decode(server_pubkey.trim())
                 .context("Kunne ikke dekode server public key fra hex")?;
@@ -133,9 +144,14 @@ async fn main() -> Result<()> {
             server_pubkey_arr.copy_from_slice(&pubkey_bytes);
 
             let client = TunnelClient::new(server_pubkey_arr, connect);
-            let response = client.send_secure_message(&message).await?;
-            println!("\nMelding sendt og bekreftet kryptert mottatt:");
-            println!("Svar: {}\n", response);
+
+            if interactive {
+                client.start_interactive_session().await?;
+            } else {
+                let response = client.send_secure_message(&message).await?;
+                println!("\nMelding sendt og bekreftet kryptert mottatt:");
+                println!("Svar: {}\n", response);
+            }
         }
 
         Commands::Verify => {
