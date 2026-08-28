@@ -1,20 +1,24 @@
 # Noise-Tunnel-RS
 
+![CI](https://github.com/Kefmat/noise-tunnel-rs/actions/workflows/ci.yml/badge.svg)
+![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)
+![Rust](https://img.shields.io/badge/rust-1.75%2B-orange.svg)
+
 > En minnesikker, asynkron og autentisert ende-til-ende-kryptert (E2EE) nettverkstunnel i **Rust**, inspirert av **Noise Protocol Framework** og moderne TLS 1.3-sikkerhetsprinsipper.
 
 ---
 
 ## Kryptografisk Arkitektur & Sikkerhetsdesign
 
-Noise-Tunnel-RS implementerer en forenklet, robust versjon av **Noise_NK / IK**-protokollen over TCP:
+Noise-Tunnel-RS implementerer en forenklet, robust versjon av **Noise_NK**-protokollen over TCP:
 
 | Komponent | Algoritme / Primitive | Formål |
 | :--- | :--- | :--- |
 | **Nøkkelutveksling (KEX)** | **X25519** (Curve25519 ECDH) | Etablering av delt hemmelighet med *Perfect Forward Secrecy (PFS)* |
 | **Nøkkelavledning (KDF)** | **HKDF-SHA256** (RFC 5869) | Avledning av to uavhengige sesjonsnøkler (*Client $\rightarrow$ Server* og *Server $\rightarrow$ Client*) |
-| **Autentisert Kryptering (AEAD)** | **ChaCha20-Poly1305** (RFC 8439) | Konfidensialitet og integritetsbeskyttelse mot tukling |
+| **Autentisert Kryptering (AEAD)** | **ChaCha20-Poly1305** (RFC 8439) | Konfidensialitet og integritetsbeskyttelse mot tukling (16-byte Poly1305 MAC) |
 | **Minnesikkerhet** | `zeroize` | Automatisk overskriving av hemmelige nøkler og sesjonsmateriale fra RAM ved drop |
-| **Replay Attack-beskyttelse** | Monotone 64-bit nonces & sekvensnummer | Forhindrer avlyttere i å injisere eller gjenta oppfangede pakker |
+| **Replay Attack-beskyttelse** | 128-bit Bitmap Sliding Window | O(1) tid og minne for å detektere og blokkere duplikate eller forsinkede pakker |
 
 ---
 
@@ -63,13 +67,23 @@ Dette returnerer en privat nøkkel (som serveren må holde hemmelig) og en offen
 cargo run -- server --bind 127.0.0.1:8080 --private-key <SERVER_PRIVKEY_HEX>
 ```
 
-### 3. Koble til med klienten
+### 3. Koble til med klienten (Enkeltmelding)
 ```bash
-# Koble til serveren og spesifiser serverens kjente offentlige nøkkel
-cargo run -- client --connect 127.0.0.1:8080 --server-pubkey <SERVER_PUBKEY_HEX> --message "Hemmelig hilsen over kryptert tunnel!"
+# Koble til serveren og send én melding
+cargo run -- client --connect 127.0.0.1:8080 --server-pubkey <SERVER_PUBKEY_HEX> --message "Hemmelig melding over kryptert tunnel!"
 ```
 
-### 4. Kjør integrerte krypto- og sårbarhetstester
+### 4. Interaktiv E2EE Sesjon (Live REPL & Streaming)
+```bash
+# Start interaktiv modus med live chat og heartbeat-støtte
+cargo run -- client --connect 127.0.0.1:8080 --server-pubkey <SERVER_PUBKEY_HEX> --interactive
+```
+I interaktiv modus:
+- Skriv `/ping` for å sende kryptert heartbeat.
+- Skriv tekster for å sende kryptert data frem og tilbake.
+- Skriv `/quit` eller `exit` for å lukke sesjonen trygt.
+
+### 5. Kjør integrerte krypto- og sårbarhetstester
 ```bash
 # Verifiser handshake, manipuleringsforsvar (MAC failure) og replay-angrep
 cargo run -- verify
@@ -77,10 +91,27 @@ cargo run -- verify
 
 ---
 
-## Kjøre enhetstester
+## Ytelse & Benchmarking
+
+Kjør den integrerte ytelses-benchmarken:
 
 ```bash
-cargo test --verbose
+cargo run --example benchmark
+```
+
+Typiske ytelsesresultater på moderne maskinvare:
+- **ChaCha20-Poly1305 AEAD**: ~2.3 GB/s (18+ Gbps) krypteringshastighet
+- **X25519 Diffie-Hellman**: ~58 000 nøkkelutvekslinger / sek
+- **HKDF-SHA256**: ~1.4 millioner sesjonsavledninger / sek
+- **Anti-Replay Window Filter**: ~40+ millioner pakkevalideringer / sek
+
+---
+
+## Kjøre enhetstester & integrasjonstester
+
+```bash
+# Kjør alle enhetstester og integrasjonstester
+cargo test --all-targets --verbose
 ```
 
 ---
@@ -90,3 +121,4 @@ cargo test --verbose
 1. **Autentisering av Server:** Klienten krever serverens forhåndsdistribuerte offentlige nøkkel (`server-pubkey`) for å forhindre Man-in-the-Middle (MitM)-angrep under handshake.
 2. **Ephemerality (PFS):** Hver ny tilkobling genererer nye engangsnøkler (`e_c`, `e_s`). Selv om en nøkkel kompromitteres i fremtiden, kan ikke tidligere trafikk dekrypteres.
 3. **AEAD Mac Verifikasjon:** Hvert datapakke-segment verifiseres med en 16-byte Poly1305 MAC-tag før dekryptering aksepteres.
+4. **Glidevindu mot Replay:** Innebygd 128-bit bitmap-filter hindrer gjentatte pakkeangrep med null allokerings-overhead.
