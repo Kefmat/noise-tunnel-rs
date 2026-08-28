@@ -2,7 +2,6 @@
 
 use anyhow::{anyhow, Result};
 use sha2::{Digest, Sha256};
-use std::collections::HashSet;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 use crate::crypto::KEY_LEN;
@@ -12,6 +11,9 @@ pub const PROTOCOL_NAME: &[u8] = b"Noise_NK_25519_ChaChaPoly_SHA256_v1";
 
 /// Maksimal rammestørrelse (64 KB for å unngå minne-DoS angrep).
 pub const MAX_FRAME_SIZE: usize = 65536;
+
+/// Standard glidevindu-størrelse for anti-replay (128 pakker).
+pub const REPLAY_WINDOW_SIZE: u64 = 128;
 
 /// Meldings-typer i protokollen
 #[repr(u8)]
@@ -34,13 +36,17 @@ impl TryFrom<u8> for MessageType {
             0x03 => Ok(MessageType::DataPayload),
             0x04 => Ok(MessageType::Heartbeat),
             0x05 => Ok(MessageType::Close),
-            other => Err(anyhow!("Ukjent meldingstype mottatt over wire: 0x{:02x}", other)),
+            other => Err(anyhow!(
+                "Ukjent meldingstype mottatt over wire: 0x{:02x}",
+                other
+            )),
         }
     }
 }
 
 /// Strukturert pakkeformat over ledningen (Length-Prefixed Wire Frame):
 /// [4 bytes: Lengde (u32-BE)] [1 byte: MessageType] [8 bytes: Nonce (u64-BE)] [N bytes: Kryptert Payload + 16b MAC]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WireFrame {
     pub msg_type: MessageType,
     pub nonce: u64,
@@ -108,43 +114,82 @@ impl WireFrame {
     }
 }
 
-/// Anti-replay filter for å forhindre replay-angrep med glidevindu / historikk.
-#[derive(Default)]
+/// Anti-replay glidevindu (sliding window) med 128-bit bitmap for O(1) tid og minne.
+/// Beskytter mot replay-angrep og håndterer out-of-order levering innenfor vinduet.
+#[derive(Debug, Clone)]
 pub struct ReplayFilter {
-    seen_nonces: HashSet<u64>,
-    highest_nonce: u64,
+    window_size: u64,
+    bitmap: u128,
+    last_seq: u64,
+    initialized: bool,
+}
+
+impl Default for ReplayFilter {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ReplayFilter {
     pub fn new() -> Self {
+        Self::with_window_size(REPLAY_WINDOW_SIZE)
+    }
+
+    pub fn with_window_size(window_size: u64) -> Self {
+        let clamped_size = window_size.clamp(1, 128);
         Self {
-            seen_nonces: HashSet::new(),
-            highest_nonce: 0,
+            window_size: clamped_size,
+            bitmap: 0,
+            last_seq: 0,
+            initialized: false,
         }
     }
 
     /// Validerer om en nonce er gyldig og aldri har vært sett før.
-    pub fn validate_and_record(&mut self, nonce: u64) -> Result<()> {
-        if self.seen_nonces.contains(&nonce) {
-            return Err(anyhow!(
-                "REPLAY DETECTED! Nonce {} har allerede blitt prosessert!",
-                nonce
-            ));
+    pub fn validate_and_record(&mut self, seq: u64) -> Result<()> {
+        if !self.initialized {
+            self.last_seq = seq;
+            self.bitmap = 1;
+            self.initialized = true;
+            return Ok(());
         }
 
-        if nonce > self.highest_nonce {
-            self.highest_nonce = nonce;
+        if seq > self.last_seq {
+            let diff = seq - self.last_seq;
+            if diff < self.window_size {
+                self.bitmap <<= diff;
+                self.bitmap |= 1;
+            } else {
+                self.bitmap = 1;
+            }
+            self.last_seq = seq;
+            Ok(())
+        } else {
+            let diff = self.last_seq - seq;
+            if diff >= self.window_size {
+                return Err(anyhow!(
+                    "REPLAY DETECTED! Sekvensnummer {} er for gammelt (utenfor vinduet på {})",
+                    seq,
+                    self.window_size
+                ));
+            }
+
+            let bit = 1u128 << diff;
+            if (self.bitmap & bit) != 0 {
+                return Err(anyhow!(
+                    "REPLAY DETECTED! Sekvensnummer {} har allerede blitt prosessert!",
+                    seq
+                ));
+            }
+
+            self.bitmap |= bit;
+            Ok(())
         }
+    }
 
-        self.seen_nonces.insert(nonce);
-
-        // Rydd opp gamle nonces om settet blir for stort (behold de siste 10 000)
-        if self.seen_nonces.len() > 10000 {
-            let cutoff = self.highest_nonce.saturating_sub(5000);
-            self.seen_nonces.retain(|&n| n >= cutoff);
-        }
-
-        Ok(())
+    #[allow(dead_code)]
+    pub fn highest_seen(&self) -> u64 {
+        self.last_seq
     }
 }
 
@@ -191,6 +236,31 @@ mod tests {
 
         // Gjenta nonce 1 -> Skal avvises som replay angrep
         let replay_result = filter.validate_and_record(1);
-        assert!(replay_result.is_err(), "Replay angrep må detekteres og avvises!");
+        assert!(
+            replay_result.is_err(),
+            "Replay angrep må detekteres og avvises!"
+        );
+    }
+
+    #[test]
+    fn test_replay_filter_sliding_window_out_of_order() {
+        let mut filter = ReplayFilter::new();
+        assert!(filter.validate_and_record(10).is_ok());
+        assert!(filter.validate_and_record(15).is_ok());
+        assert!(filter.validate_and_record(12).is_ok()); // gyldig out-of-order innenfor vindu
+        assert!(filter.validate_and_record(12).is_err()); // duplikat avvist
+        assert!(filter.validate_and_record(15).is_err()); // duplikat avvist
+    }
+
+    #[test]
+    fn test_replay_filter_old_packet_outside_window() {
+        let mut filter = ReplayFilter::with_window_size(64);
+        assert!(filter.validate_and_record(100).is_ok());
+        assert_eq!(filter.highest_seen(), 100);
+        assert!(filter.validate_and_record(200).is_ok()); // Hopper frem, skyver vindu til [137..200]
+        assert_eq!(filter.highest_seen(), 200);
+        assert!(filter.validate_and_record(100).is_err()); // 100 er nå utenfor vindu
+        assert!(filter.validate_and_record(150).is_ok()); // 150 er innenfor [137..200]
+        assert!(filter.validate_and_record(150).is_err()); // Duplikat
     }
 }
