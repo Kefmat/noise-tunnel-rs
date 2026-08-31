@@ -26,6 +26,18 @@ pub enum MessageType {
     Close = 0x05,
 }
 
+impl std::fmt::Display for MessageType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            MessageType::HandshakeInit => write!(f, "HandshakeInit"),
+            MessageType::HandshakeResp => write!(f, "HandshakeResp"),
+            MessageType::DataPayload => write!(f, "DataPayload"),
+            MessageType::Heartbeat => write!(f, "Heartbeat"),
+            MessageType::Close => write!(f, "Close"),
+        }
+    }
+}
+
 impl TryFrom<u8> for MessageType {
     type Error = anyhow::Error;
 
@@ -60,6 +72,34 @@ impl WireFrame {
             nonce,
             payload,
         }
+    }
+
+    /// Sjekker om rammen representerer en handshake-pakke.
+    pub fn is_handshake(&self) -> bool {
+        matches!(
+            self.msg_type,
+            MessageType::HandshakeInit | MessageType::HandshakeResp
+        )
+    }
+
+    /// Sjekker om rammen er et heartbeat.
+    pub fn is_heartbeat(&self) -> bool {
+        self.msg_type == MessageType::Heartbeat
+    }
+
+    /// Sjekker om rammen inneholder kryptert datainnhold.
+    pub fn is_data(&self) -> bool {
+        self.msg_type == MessageType::DataPayload
+    }
+
+    /// Sjekker om rammen er en avslutningsmelding.
+    pub fn is_close(&self) -> bool {
+        self.msg_type == MessageType::Close
+    }
+
+    /// Returnerer lengden på rammens nyttelast i bytes.
+    pub fn payload_len(&self) -> usize {
+        self.payload.len()
     }
 
     /// Serialiserer rammen til binære bytes for overføring over TCP.
@@ -226,6 +266,29 @@ mod tests {
         assert_eq!(parsed.msg_type, MessageType::DataPayload);
         assert_eq!(parsed.nonce, 42);
         assert_eq!(parsed.payload, b"Hemmelig Payload");
+    }
+
+    #[test]
+    fn test_wireframe_helpers_and_display() {
+        let data_frame = WireFrame::new(MessageType::DataPayload, 1, vec![1, 2, 3]);
+        assert!(data_frame.is_data());
+        assert!(!data_frame.is_handshake());
+        assert!(!data_frame.is_heartbeat());
+        assert!(!data_frame.is_close());
+        assert_eq!(data_frame.payload_len(), 3);
+        assert_eq!(format!("{}", MessageType::DataPayload), "DataPayload");
+
+        let hs_frame = WireFrame::new(MessageType::HandshakeInit, 0, vec![]);
+        assert!(hs_frame.is_handshake());
+        assert_eq!(format!("{}", MessageType::HandshakeInit), "HandshakeInit");
+
+        let hb_frame = WireFrame::new(MessageType::Heartbeat, 2, vec![]);
+        assert!(hb_frame.is_heartbeat());
+        assert_eq!(format!("{}", MessageType::Heartbeat), "Heartbeat");
+
+        let close_frame = WireFrame::new(MessageType::Close, 3, vec![]);
+        assert!(close_frame.is_close());
+        assert_eq!(format!("{}", MessageType::Close), "Close");
     }
 
     #[test]
