@@ -326,4 +326,39 @@ mod tests {
         assert!(filter.validate_and_record(150).is_ok()); // 150 er innenfor [137..200]
         assert!(filter.validate_and_record(150).is_err()); // Duplikat
     }
+
+    #[test]
+    fn test_invalid_message_type_rejection() {
+        assert!(MessageType::try_from(0x00).is_err());
+        assert!(MessageType::try_from(0x99).is_err());
+        assert!(MessageType::try_from(0xFF).is_err());
+    }
+
+    #[tokio::test]
+    async fn test_oversized_frame_rejection() {
+        let mut raw = Vec::new();
+        // Frame length > MAX_FRAME_SIZE (65536)
+        let too_large = (MAX_FRAME_SIZE + 10) as u32;
+        raw.extend_from_slice(&too_large.to_be_bytes());
+        raw.extend_from_slice(&[0u8; 16]);
+
+        let mut cursor = Cursor::new(raw);
+        let res = WireFrame::read_from(&mut cursor).await;
+        assert!(res.is_err(), "Overdimensjonert ramme må avvises!");
+    }
+
+    #[test]
+    fn test_transcript_hash_consistency() {
+        let prologue = PROTOCOL_NAME;
+        let c_e = [1u8; 32];
+        let s_p = [2u8; 32];
+        let s_e = [3u8; 32];
+
+        let hash1 = hash_handshake_state(prologue, &c_e, &s_p, Some(&s_e));
+        let hash2 = hash_handshake_state(prologue, &c_e, &s_p, Some(&s_e));
+        let hash_no_se = hash_handshake_state(prologue, &c_e, &s_p, None);
+
+        assert_eq!(hash1, hash2);
+        assert_ne!(hash1, hash_no_se);
+    }
 }
