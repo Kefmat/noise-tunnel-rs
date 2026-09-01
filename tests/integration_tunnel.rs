@@ -73,3 +73,17 @@ async fn test_large_payload_transfer() -> Result<()> {
 
     Ok(())
 }
+
+#[tokio::test]
+async fn test_sequential_messages() -> Result<()> {
+    let (server_keypair, server_addr) = spawn_test_server().await?;
+    let client = TunnelClient::new(server_keypair.public_key, server_addr);
+
+    for i in 1..=10 {
+        let msg = format!("Sekvensiell testmelding #{}", i);
+        let response = client.send_secure_message(&msg).await?;
+        assert!(response.contains(&msg));
+    }
+
+    Ok(())
+}
