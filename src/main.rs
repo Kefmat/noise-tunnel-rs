@@ -1,12 +1,12 @@
 //! Noise-Tunnel-RS: Sikker E2EE Sesjonstunnel med Noise Protocol i Rust.
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use std::net::SocketAddr;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use noise_tunnel_rs::client::TunnelClient;
-use noise_tunnel_rs::crypto::{KeyPair, KEY_LEN};
+use noise_tunnel_rs::crypto::KeyPair;
 use noise_tunnel_rs::server::TunnelServer;
 use noise_tunnel_rs::verify;
 
@@ -82,11 +82,11 @@ async fn main() -> Result<()> {
             println!("--------------------------------------------------");
             println!(
                 "Privat Nokkel (Hold HEMMELIG): {}",
-                hex::encode(keypair.private_key)
+                keypair.private_key_hex()
             );
             println!(
                 "Offentlig Nokkel (Deles fritt): {}",
-                hex::encode(keypair.public_key)
+                keypair.public_key_hex()
             );
             println!("--------------------------------------------------\n");
         }
@@ -94,24 +94,13 @@ async fn main() -> Result<()> {
         Commands::Server { bind, private_key } => {
             let keypair = match private_key {
                 Some(hex_str) => {
-                    let bytes = hex::decode(hex_str.trim())
-                        .context("Kunne ikke dekode privat nokkel fra hex")?;
-                    if bytes.len() != KEY_LEN {
-                        return Err(anyhow!(
-                            "Privat nokkel ma vaere noyaktig {} bytes ({} hex-tegn)",
-                            KEY_LEN,
-                            KEY_LEN * 2
-                        ));
-                    }
-                    let mut arr = [0u8; KEY_LEN];
-                    arr.copy_from_slice(&bytes);
-                    KeyPair::from_private_bytes(arr)
+                    KeyPair::from_private_hex(&hex_str).context("Kunne ikke laste privat nokkel")?
                 }
                 None => {
                     let generated = KeyPair::generate();
                     println!("Ingen privatnokkel oppgitt. Genererte nytt server-nokkelpar:");
-                    println!("Privat nokkel: {}", hex::encode(generated.private_key));
-                    println!("Offentlig nokkel: {}", hex::encode(generated.public_key));
+                    println!("Privat nokkel: {}", generated.private_key_hex());
+                    println!("Offentlig nokkel: {}", generated.public_key_hex());
                     generated
                 }
             };
@@ -126,17 +115,8 @@ async fn main() -> Result<()> {
             message,
             interactive,
         } => {
-            let pubkey_bytes = hex::decode(server_pubkey.trim())
-                .context("Kunne ikke dekode server public key fra hex")?;
-            if pubkey_bytes.len() != KEY_LEN {
-                return Err(anyhow!(
-                    "Server public key ma vaere noyaktig {} bytes ({} hex-tegn)",
-                    KEY_LEN,
-                    KEY_LEN * 2
-                ));
-            }
-            let mut server_pubkey_arr = [0u8; KEY_LEN];
-            server_pubkey_arr.copy_from_slice(&pubkey_bytes);
+            let server_pubkey_arr = KeyPair::parse_public_key_hex(&server_pubkey)
+                .context("Kunne ikke laste server offentlig nokkel")?;
 
             let client = TunnelClient::new(server_pubkey_arr, connect);
 

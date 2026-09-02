@@ -20,10 +20,19 @@ pub const NONCE_LEN: usize = 12;
 pub const TAG_LEN: usize = 16;
 
 /// Statisk hemmelig nøkkelpar for X25519.
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct KeyPair {
     pub private_key: [u8; KEY_LEN],
     pub public_key: [u8; KEY_LEN],
+}
+
+impl std::fmt::Debug for KeyPair {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("KeyPair")
+            .field("public_key", &hex::encode(self.public_key))
+            .field("private_key", &"[REDACTED]")
+            .finish()
+    }
 }
 
 impl KeyPair {
@@ -45,6 +54,50 @@ impl KeyPair {
             private_key: bytes,
             public_key: *public.as_bytes(),
         }
+    }
+
+    /// Oppretter et nøkkelpar fra en hex-enkodet privat nøkkel.
+    pub fn from_private_hex(hex_str: &str) -> Result<Self> {
+        let bytes = hex::decode(hex_str.trim())
+            .map_err(|e| anyhow!("Ugyldig hex-enkoding for privat nøkkel: {:?}", e))?;
+        if bytes.len() != KEY_LEN {
+            return Err(anyhow!(
+                "Privat nøkkel må være nøyaktig {} bytes ({} hex-tegn), mottok {}",
+                KEY_LEN,
+                KEY_LEN * 2,
+                bytes.len()
+            ));
+        }
+        let mut arr = [0u8; KEY_LEN];
+        arr.copy_from_slice(&bytes);
+        Ok(Self::from_private_bytes(arr))
+    }
+
+    /// Parser en offentlig nøkkel fra hex-format til en 32-byte array.
+    pub fn parse_public_key_hex(hex_str: &str) -> Result<[u8; KEY_LEN]> {
+        let bytes = hex::decode(hex_str.trim())
+            .map_err(|e| anyhow!("Ugyldig hex-enkoding for offentlig nøkkel: {:?}", e))?;
+        if bytes.len() != KEY_LEN {
+            return Err(anyhow!(
+                "Offentlig nøkkel må være nøyaktig {} bytes ({} hex-tegn), mottok {}",
+                KEY_LEN,
+                KEY_LEN * 2,
+                bytes.len()
+            ));
+        }
+        let mut arr = [0u8; KEY_LEN];
+        arr.copy_from_slice(&bytes);
+        Ok(arr)
+    }
+
+    /// Returnerer den offentlige nøkkelen som hex-streng.
+    pub fn public_key_hex(&self) -> String {
+        hex::encode(self.public_key)
+    }
+
+    /// Returnerer den private nøkkelen som hex-streng.
+    pub fn private_key_hex(&self) -> String {
+        hex::encode(self.private_key)
     }
 }
 
@@ -244,5 +297,36 @@ mod tests {
         assert_eq!(c1, c2);
         assert_eq!(s1, s2);
         assert_ne!(c1, s1, "Klient- og server-nøkler må være unike");
+    }
+
+    #[test]
+    fn test_keypair_hex_roundtrip_and_parsing() {
+        let keypair = KeyPair::generate();
+        let priv_hex = keypair.private_key_hex();
+        let pub_hex = keypair.public_key_hex();
+
+        assert_eq!(priv_hex.len(), KEY_LEN * 2);
+        assert_eq!(pub_hex.len(), KEY_LEN * 2);
+
+        let restored = KeyPair::from_private_hex(&priv_hex).unwrap();
+        assert_eq!(restored.public_key, keypair.public_key);
+        assert_eq!(restored.private_key, keypair.private_key);
+
+        let parsed_pub = KeyPair::parse_public_key_hex(&pub_hex).unwrap();
+        assert_eq!(parsed_pub, keypair.public_key);
+
+        // Ugyldig hex / feil lengde
+        assert!(KeyPair::from_private_hex("invalid-hex").is_err());
+        assert!(KeyPair::from_private_hex("aabbcc").is_err());
+        assert!(KeyPair::parse_public_key_hex("1234").is_err());
+    }
+
+    #[test]
+    fn test_keypair_debug_redacts_private_key() {
+        let keypair = KeyPair::generate();
+        let debug_str = format!("{:?}", keypair);
+        assert!(debug_str.contains("[REDACTED]"));
+        assert!(!debug_str.contains(&hex::encode(keypair.private_key)));
+        assert!(debug_str.contains(&keypair.public_key_hex()));
     }
 }
