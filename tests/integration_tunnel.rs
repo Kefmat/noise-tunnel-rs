@@ -87,3 +87,43 @@ async fn test_sequential_messages() -> Result<()> {
 
     Ok(())
 }
+
+#[tokio::test]
+async fn test_empty_payload_transfer() -> Result<()> {
+    let (server_keypair, server_addr) = spawn_test_server().await?;
+    let client = TunnelClient::new(server_keypair.public_key, server_addr);
+
+    let response = client.send_secure_message("").await?;
+    assert_eq!(response, "Server mottok: ");
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_hex_configured_client_server() -> Result<()> {
+    let server_keypair = KeyPair::generate();
+    let priv_hex = server_keypair.private_key_hex();
+    let pub_hex = server_keypair.public_key_hex();
+
+    let server_keys = KeyPair::from_private_hex(&priv_hex)?;
+    let listener = TcpListener::bind("127.0.0.1:0").await?;
+    let local_addr = listener.local_addr()?;
+    drop(listener);
+
+    let server = TunnelServer::new(server_keys, local_addr);
+    tokio::spawn(async move {
+        let _ = server.run().await;
+    });
+
+    tokio::time::sleep(tokio::time::Duration::from_millis(60)).await;
+
+    let client_pubkey = KeyPair::parse_public_key_hex(&pub_hex)?;
+    let client = TunnelClient::new(client_pubkey, local_addr);
+
+    let resp = client
+        .send_secure_message("Ende-til-ende test med hex-konfigurerte nøkler")
+        .await?;
+    assert!(resp.contains("Ende-til-ende test med hex-konfigurerte nøkler"));
+
+    Ok(())
+}
