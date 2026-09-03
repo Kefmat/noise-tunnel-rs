@@ -20,10 +20,17 @@ pub const NONCE_LEN: usize = 12;
 pub const TAG_LEN: usize = 16;
 
 /// Statisk hemmelig nøkkelpar for X25519.
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, Zeroize, ZeroizeOnDrop)]
 pub struct KeyPair {
     pub private_key: [u8; KEY_LEN],
+    #[zeroize(skip)]
     pub public_key: [u8; KEY_LEN],
+}
+
+impl Default for KeyPair {
+    fn default() -> Self {
+        Self::generate()
+    }
 }
 
 impl std::fmt::Debug for KeyPair {
@@ -328,5 +335,12 @@ mod tests {
         assert!(debug_str.contains("[REDACTED]"));
         assert!(!debug_str.contains(&hex::encode(keypair.private_key)));
         assert!(debug_str.contains(&keypair.public_key_hex()));
+    }
+
+    #[test]
+    fn test_keypair_default_generates_valid_keypair() {
+        let keypair = KeyPair::default();
+        assert_ne!(keypair.private_key, [0u8; KEY_LEN]);
+        assert_ne!(keypair.public_key, [0u8; KEY_LEN]);
     }
 }
