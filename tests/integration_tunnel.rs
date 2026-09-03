@@ -127,3 +127,80 @@ async fn test_hex_configured_client_server() -> Result<()> {
 
     Ok(())
 }
+
+#[tokio::test]
+async fn test_heartbeat_and_session_lifecycle() -> Result<()> {
+    use noise_tunnel_rs::crypto::{derive_session_keys, CipherState, EphemeralKeyPair, KEY_LEN};
+    use noise_tunnel_rs::protocol::{hash_handshake_state, MessageType, WireFrame, PROTOCOL_NAME};
+    use tokio::net::TcpStream;
+
+    let (server_keypair, server_addr) = spawn_test_server().await?;
+    let mut stream = TcpStream::connect(server_addr).await?;
+
+    // Perform handshake manually to test transport heartbeat & close lifecycle
+    let client_ephem = EphemeralKeyPair::generate();
+    let dh_static = client_ephem.diffie_hellman(&server_keypair.public_key);
+    let h1 = hash_handshake_state(
+        PROTOCOL_NAME,
+        &client_ephem.public_key,
+        &server_keypair.public_key,
+        None,
+    );
+
+    let (k_init_c, _) = derive_session_keys(&dh_static, &h1)?;
+    let mut init_cipher = CipherState::new(k_init_c);
+    let init_ciphertext = init_cipher.encrypt(b"HANDSHAKE_INIT_CLIENT", &h1)?;
+
+    let mut init_payload = Vec::new();
+    init_payload.extend_from_slice(&client_ephem.public_key);
+    init_payload.extend_from_slice(&init_ciphertext);
+
+    let init_frame = WireFrame::new(MessageType::HandshakeInit, 0, init_payload);
+    init_frame.write_to(&mut stream).await?;
+
+    // Read HandshakeResp
+    let resp_frame = WireFrame::read_from(&mut stream).await?;
+    assert_eq!(resp_frame.msg_type, MessageType::HandshakeResp);
+
+    let mut server_ephem_pub = [0u8; KEY_LEN];
+    server_ephem_pub.copy_from_slice(&resp_frame.payload[..KEY_LEN]);
+    let resp_ciphertext = &resp_frame.payload[KEY_LEN..];
+
+    let dh_ephem = client_ephem.diffie_hellman(&server_ephem_pub);
+    let h2 = hash_handshake_state(
+        PROTOCOL_NAME,
+        &client_ephem.public_key,
+        &server_keypair.public_key,
+        Some(&server_ephem_pub),
+    );
+
+    let (_, k_resp_s) = derive_session_keys(&dh_ephem, &h2)?;
+    let mut resp_cipher = CipherState::new(k_resp_s);
+    let ack = resp_cipher.decrypt(resp_ciphertext, &h2, 0)?;
+    assert_eq!(ack, b"HANDSHAKE_COMPLETE_ACK");
+
+    let mut combined_secret = Vec::with_capacity(KEY_LEN * 2);
+    combined_secret.extend_from_slice(&dh_static);
+    combined_secret.extend_from_slice(&dh_ephem);
+
+    let (client_write_key, server_write_key) = derive_session_keys(&combined_secret, &h2)?;
+    let mut tx = CipherState::new(client_write_key);
+    let mut rx = CipherState::new(server_write_key);
+
+    // Send Heartbeat
+    let ping_ciphertext = tx.encrypt(b"PING", b"heartbeat")?;
+    let ping_frame = WireFrame::new(MessageType::Heartbeat, 0, ping_ciphertext);
+    ping_frame.write_to(&mut stream).await?;
+
+    // Receive Pong
+    let pong_frame = WireFrame::read_from(&mut stream).await?;
+    assert_eq!(pong_frame.msg_type, MessageType::Heartbeat);
+    let decrypted_pong = rx.decrypt(&pong_frame.payload, b"heartbeat", pong_frame.nonce)?;
+    assert_eq!(decrypted_pong, b"PONG");
+
+    // Send Close
+    let close_frame = WireFrame::new(MessageType::Close, tx.current_nonce(), vec![]);
+    close_frame.write_to(&mut stream).await?;
+
+    Ok(())
+}
