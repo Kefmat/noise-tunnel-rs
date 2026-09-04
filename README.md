@@ -40,6 +40,32 @@ Noise-Tunnel-RS implementerer en forenklet, robust versjon av **Noise_NK**-proto
           │ <── Encrypted Frame (Nonce N_2, Tag_2) ────────── │
 ```
 
+### Trådramme-format (Binary Wire Frame)
+
+Alle meldinger over TCP innkapsles i en length-prefixed ramme:
+
+```text
+ 0                   1                   2                   3
+ 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|                    Frame Length (4 bytes, BE)                 |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+| MsgType (1 B) |           Nonce / Sequence (8 bytes, BE)      |
++-+-+-+-+-+-+-+-+                                               |
+|                                                               |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|                Encrypted Payload + Poly1305 MAC               |
+|                           (N bytes)                           |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+```
+
+| Felt | Størrelse | Beskrivelse |
+| :--- | :--- | :--- |
+| **Length** | 4 bytes (u32-BE) | Total rammelengde ekskludert lengdefeltet (maks 64 KB DoS-grense) |
+| **MessageType** | 1 byte (u8) | `0x01`: HandshakeInit, `0x02`: HandshakeResp, `0x03`: Data, `0x04`: Heartbeat, `0x05`: Close |
+| **Nonce** | 8 bytes (u64-BE) | Monotont økende sekvensnummer per retning for ChaCha20-Poly1305 og anti-replay |
+| **Payload** | N bytes | Kryptert innhold etterfulgt av 16-byte Poly1305 autentiseringstag |
+
 ---
 
 ## Installasjon & Kompilering
