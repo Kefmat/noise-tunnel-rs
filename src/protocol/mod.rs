@@ -231,6 +231,23 @@ impl ReplayFilter {
     pub fn highest_seen(&self) -> u64 {
         self.last_seq
     }
+
+    /// Returnerer konfigurert glidevindu-størrelse.
+    pub fn window_size(&self) -> u64 {
+        self.window_size
+    }
+
+    /// Sjekker om filteret har mottatt sin første sekvens.
+    pub fn is_initialized(&self) -> bool {
+        self.initialized
+    }
+
+    /// Tilbakestiller filtertilstanden til utgangspunktet.
+    pub fn reset(&mut self) {
+        self.bitmap = 0;
+        self.last_seq = 0;
+        self.initialized = false;
+    }
 }
 
 /// Hjelpefunksjon for å generere handshake-hash (transcript hash) for integrert sesjonsbinding.
@@ -360,5 +377,23 @@ mod tests {
 
         assert_eq!(hash1, hash2);
         assert_ne!(hash1, hash_no_se);
+    }
+
+    #[test]
+    fn test_replay_filter_reset_and_helpers() {
+        let mut filter = ReplayFilter::with_window_size(64);
+        assert_eq!(filter.window_size(), 64);
+        assert!(!filter.is_initialized());
+
+        assert!(filter.validate_and_record(42).is_ok());
+        assert!(filter.is_initialized());
+        assert_eq!(filter.highest_seen(), 42);
+
+        filter.reset();
+        assert!(!filter.is_initialized());
+        assert_eq!(filter.highest_seen(), 0);
+
+        // Can accept 42 again after reset
+        assert!(filter.validate_and_record(42).is_ok());
     }
 }
