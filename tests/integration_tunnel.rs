@@ -204,3 +204,96 @@ async fn test_heartbeat_and_session_lifecycle() -> Result<()> {
 
     Ok(())
 }
+
+#[tokio::test]
+async fn test_malformed_handshake_payload_rejected() -> Result<()> {
+    use noise_tunnel_rs::protocol::{MessageType, WireFrame};
+    use tokio::net::TcpStream;
+
+    let (_server_keypair, server_addr) = spawn_test_server().await?;
+    let mut stream = TcpStream::connect(server_addr).await?;
+
+    // Send HandshakeInit with too short payload (< KEY_LEN + 16 = 48 bytes)
+    let short_payload = vec![0x42u8; 10];
+    let bad_init_frame = WireFrame::new(MessageType::HandshakeInit, 0, short_payload);
+    bad_init_frame.write_to(&mut stream).await?;
+
+    // Server should reject and close connection
+    let read_result = WireFrame::read_from(&mut stream).await;
+    assert!(
+        read_result.is_err(),
+        "Server må lukke tilkobling ved ugyldig handshake payload"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_network_replay_packet_rejected() -> Result<()> {
+    use noise_tunnel_rs::crypto::{derive_session_keys, CipherState, EphemeralKeyPair, KEY_LEN};
+    use noise_tunnel_rs::protocol::{hash_handshake_state, MessageType, WireFrame, PROTOCOL_NAME};
+    use tokio::net::TcpStream;
+
+    let (server_keypair, server_addr) = spawn_test_server().await?;
+    let mut stream = TcpStream::connect(server_addr).await?;
+
+    // Handshake
+    let client_ephem = EphemeralKeyPair::generate();
+    let dh_static = client_ephem.diffie_hellman(&server_keypair.public_key);
+    let h1 = hash_handshake_state(
+        PROTOCOL_NAME,
+        &client_ephem.public_key,
+        &server_keypair.public_key,
+        None,
+    );
+
+    let (k_init_c, _) = derive_session_keys(&dh_static, &h1)?;
+    let mut init_cipher = CipherState::new(k_init_c);
+    let init_ciphertext = init_cipher.encrypt(b"HANDSHAKE_INIT_CLIENT", &h1)?;
+
+    let mut init_payload = Vec::new();
+    init_payload.extend_from_slice(&client_ephem.public_key);
+    init_payload.extend_from_slice(&init_ciphertext);
+
+    let init_frame = WireFrame::new(MessageType::HandshakeInit, 0, init_payload);
+    init_frame.write_to(&mut stream).await?;
+
+    let resp_frame = WireFrame::read_from(&mut stream).await?;
+    let mut server_ephem_pub = [0u8; KEY_LEN];
+    server_ephem_pub.copy_from_slice(&resp_frame.payload[..KEY_LEN]);
+    let dh_ephem = client_ephem.diffie_hellman(&server_ephem_pub);
+    let h2 = hash_handshake_state(
+        PROTOCOL_NAME,
+        &client_ephem.public_key,
+        &server_keypair.public_key,
+        Some(&server_ephem_pub),
+    );
+
+    let mut combined_secret = Vec::with_capacity(KEY_LEN * 2);
+    combined_secret.extend_from_slice(&dh_static);
+    combined_secret.extend_from_slice(&dh_ephem);
+
+    let (client_write_key, _server_write_key) = derive_session_keys(&combined_secret, &h2)?;
+    let mut tx = CipherState::new(client_write_key);
+
+    // Send original data frame (nonce 0)
+    let original_ciphertext = tx.encrypt(b"Original packet", b"tunnel-data")?;
+    let data_frame = WireFrame::new(MessageType::DataPayload, 0, original_ciphertext);
+    data_frame.write_to(&mut stream).await?;
+
+    // Server answers
+    let reply = WireFrame::read_from(&mut stream).await?;
+    assert_eq!(reply.msg_type, MessageType::DataPayload);
+
+    // Replay attack: send EXACT duplicate data frame (nonce 0) again
+    data_frame.write_to(&mut stream).await?;
+
+    // Server ReplayFilter rejects the replayed packet and terminates session
+    let post_replay_read = WireFrame::read_from(&mut stream).await;
+    assert!(
+        post_replay_read.is_err(),
+        "Replay-pakke må føre til at serveren avviser sesjonen"
+    );
+
+    Ok(())
+}
