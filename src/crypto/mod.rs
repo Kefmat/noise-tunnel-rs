@@ -97,6 +97,16 @@ impl KeyPair {
         Ok(arr)
     }
 
+    /// Returnerer referanse til den offentlige nøkkelen.
+    pub fn public_key(&self) -> &[u8; KEY_LEN] {
+        &self.public_key
+    }
+
+    /// Returnerer referanse til den private nøkkelen.
+    pub fn private_key(&self) -> &[u8; KEY_LEN] {
+        &self.private_key
+    }
+
     /// Returnerer den offentlige nøkkelen som hex-streng.
     pub fn public_key_hex(&self) -> String {
         hex::encode(self.public_key)
@@ -105,6 +115,12 @@ impl KeyPair {
     /// Returnerer den private nøkkelen som hex-streng.
     pub fn private_key_hex(&self) -> String {
         hex::encode(self.private_key)
+    }
+}
+
+impl AsRef<[u8; KEY_LEN]> for KeyPair {
+    fn as_ref(&self) -> &[u8; KEY_LEN] {
+        &self.public_key
     }
 }
 
@@ -342,5 +358,13 @@ mod tests {
         let keypair = KeyPair::default();
         assert_ne!(keypair.private_key, [0u8; KEY_LEN]);
         assert_ne!(keypair.public_key, [0u8; KEY_LEN]);
+    }
+
+    #[test]
+    fn test_keypair_accessors_and_as_ref() {
+        let keypair = KeyPair::generate();
+        assert_eq!(keypair.public_key(), &keypair.public_key);
+        assert_eq!(keypair.private_key(), &keypair.private_key);
+        assert_eq!(keypair.as_ref(), &keypair.public_key);
     }
 }
