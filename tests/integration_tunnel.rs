@@ -297,3 +297,21 @@ async fn test_network_replay_packet_rejected() -> Result<()> {
 
     Ok(())
 }
+
+#[tokio::test]
+async fn test_client_and_server_accessors() -> Result<()> {
+    let keypair = KeyPair::generate();
+    let addr: std::net::SocketAddr = "127.0.0.1:9999".parse()?;
+
+    let server = TunnelServer::new(keypair.clone(), addr);
+    assert_eq!(server.bind_addr(), addr);
+    assert_eq!(server.public_key(), &keypair.public_key);
+    assert_eq!(server.public_key_hex(), keypair.public_key_hex());
+
+    let client = TunnelClient::new(keypair.public_key, addr);
+    assert_eq!(client.target_addr(), addr);
+    assert_eq!(client.server_pubkey(), &keypair.public_key);
+    assert_eq!(client.server_pubkey_hex(), keypair.public_key_hex());
+
+    Ok(())
+}

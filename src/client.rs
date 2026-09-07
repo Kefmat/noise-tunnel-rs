@@ -22,6 +22,21 @@ impl TunnelClient {
         }
     }
 
+    /// Returnerer målserverens adresse.
+    pub fn target_addr(&self) -> SocketAddr {
+        self.target_addr
+    }
+
+    /// Returnerer referanse til serverens forventede offentlige nøkkel.
+    pub fn server_pubkey(&self) -> &[u8; KEY_LEN] {
+        &self.server_pubkey
+    }
+
+    /// Returnerer serverens offentlige nøkkel i hex-format.
+    pub fn server_pubkey_hex(&self) -> String {
+        hex::encode(self.server_pubkey)
+    }
+
     /// Utfører Noise-NK handshake over TCP-strømmen.
     async fn perform_handshake(
         &self,

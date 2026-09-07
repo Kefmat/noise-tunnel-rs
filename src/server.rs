@@ -20,6 +20,21 @@ impl TunnelServer {
         Self { keypair, bind_addr }
     }
 
+    /// Returnerer serverens lytteadresse.
+    pub fn bind_addr(&self) -> SocketAddr {
+        self.bind_addr
+    }
+
+    /// Returnerer referanse til serverens offentlige nøkkel.
+    pub fn public_key(&self) -> &[u8; KEY_LEN] {
+        &self.keypair.public_key
+    }
+
+    /// Returnerer serverens offentlige nøkkel i hex-format.
+    pub fn public_key_hex(&self) -> String {
+        self.keypair.public_key_hex()
+    }
+
     /// Starter server-løkken og lytter etter innkommende forbindelser.
     pub async fn run(&self) -> Result<()> {
         let listener = TcpListener::bind(self.bind_addr).await?;
