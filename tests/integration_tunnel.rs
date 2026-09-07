@@ -315,3 +315,93 @@ async fn test_client_and_server_accessors() -> Result<()> {
 
     Ok(())
 }
+
+#[tokio::test]
+async fn test_multiple_rapid_heartbeats_in_session() -> Result<()> {
+    use noise_tunnel_rs::crypto::{derive_session_keys, CipherState, EphemeralKeyPair, KEY_LEN};
+    use noise_tunnel_rs::protocol::{hash_handshake_state, WireFrame, PROTOCOL_NAME};
+    use tokio::net::TcpStream;
+
+    let (server_keypair, server_addr) = spawn_test_server().await?;
+    let mut stream = TcpStream::connect(server_addr).await?;
+
+    // Handshake
+    let client_ephem = EphemeralKeyPair::generate();
+    let dh_static = client_ephem.diffie_hellman(&server_keypair.public_key);
+    let h1 = hash_handshake_state(
+        PROTOCOL_NAME,
+        &client_ephem.public_key,
+        &server_keypair.public_key,
+        None,
+    );
+
+    let (k_init_c, _) = derive_session_keys(&dh_static, &h1)?;
+    let mut init_cipher = CipherState::new(k_init_c);
+    let init_ciphertext = init_cipher.encrypt(b"HANDSHAKE_INIT_CLIENT", &h1)?;
+
+    let mut init_payload = Vec::new();
+    init_payload.extend_from_slice(&client_ephem.public_key);
+    init_payload.extend_from_slice(&init_ciphertext);
+
+    let init_frame = WireFrame::handshake_init(0, init_payload);
+    init_frame.write_to(&mut stream).await?;
+
+    let resp_frame = WireFrame::read_from(&mut stream).await?;
+    let mut server_ephem_pub = [0u8; KEY_LEN];
+    server_ephem_pub.copy_from_slice(&resp_frame.payload[..KEY_LEN]);
+    let dh_ephem = client_ephem.diffie_hellman(&server_ephem_pub);
+    let h2 = hash_handshake_state(
+        PROTOCOL_NAME,
+        &client_ephem.public_key,
+        &server_keypair.public_key,
+        Some(&server_ephem_pub),
+    );
+
+    let (_, k_resp_s) = derive_session_keys(&dh_ephem, &h2)?;
+    let mut resp_cipher = CipherState::new(k_resp_s);
+    let ack = resp_cipher.decrypt(&resp_frame.payload[KEY_LEN..], &h2, 0)?;
+    assert_eq!(ack, b"HANDSHAKE_COMPLETE_ACK");
+
+    let mut combined_secret = Vec::with_capacity(KEY_LEN * 2);
+    combined_secret.extend_from_slice(&dh_static);
+    combined_secret.extend_from_slice(&dh_ephem);
+
+    let (client_write_key, server_write_key) = derive_session_keys(&combined_secret, &h2)?;
+    let mut tx = CipherState::new(client_write_key);
+    let mut rx = CipherState::new(server_write_key);
+
+    // Send 5 rapid heartbeats sequentially
+    for seq in 0..5 {
+        let nonce = tx.current_nonce();
+        assert_eq!(nonce, seq);
+        let ping_ciphertext = tx.encrypt(b"PING", b"heartbeat")?;
+        let ping_frame = WireFrame::heartbeat(nonce, ping_ciphertext);
+        ping_frame.write_to(&mut stream).await?;
+
+        let pong_frame = WireFrame::read_from(&mut stream).await?;
+        assert!(pong_frame.is_heartbeat());
+        assert_eq!(pong_frame.nonce, seq);
+        let decrypted_pong = rx.decrypt(&pong_frame.payload, b"heartbeat", pong_frame.nonce)?;
+        assert_eq!(decrypted_pong, b"PONG");
+    }
+
+    // Follow up with regular data frame
+    let tx_nonce = tx.current_nonce();
+    let data_cipher = tx.encrypt(b"Data etter heartbeats", b"tunnel-data")?;
+    let data_frame = WireFrame::data(tx_nonce, data_cipher);
+    data_frame.write_to(&mut stream).await?;
+
+    let reply_frame = WireFrame::read_from(&mut stream).await?;
+    assert!(reply_frame.is_data());
+    let decrypted_reply = rx.decrypt(&reply_frame.payload, b"tunnel-data", reply_frame.nonce)?;
+    assert_eq!(
+        String::from_utf8_lossy(&decrypted_reply),
+        "Server mottok: Data etter heartbeats"
+    );
+
+    // Close
+    let close_frame = WireFrame::close(tx.current_nonce());
+    close_frame.write_to(&mut stream).await?;
+
+    Ok(())
+}

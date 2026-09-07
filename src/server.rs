@@ -166,9 +166,11 @@ impl TunnelServer {
                     reply_frame.write_to(&mut stream).await?;
                 }
                 MessageType::Heartbeat => {
+                    replay_filter.validate_and_record(frame.nonce)?;
+                    let _ = rx_cipher.decrypt(&frame.payload, b"heartbeat", frame.nonce)?;
                     let pong_nonce = tx_cipher.current_nonce();
                     let pong = tx_cipher.encrypt(b"PONG", b"heartbeat")?;
-                    let pong_frame = WireFrame::new(MessageType::Heartbeat, pong_nonce, pong);
+                    let pong_frame = WireFrame::heartbeat(pong_nonce, pong);
                     pong_frame.write_to(&mut stream).await?;
                 }
                 MessageType::Close => {
