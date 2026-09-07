@@ -74,6 +74,31 @@ impl WireFrame {
         }
     }
 
+    /// Oppretter en ny HandshakeInit-ramme.
+    pub fn handshake_init(nonce: u64, payload: Vec<u8>) -> Self {
+        Self::new(MessageType::HandshakeInit, nonce, payload)
+    }
+
+    /// Oppretter en ny HandshakeResp-ramme.
+    pub fn handshake_resp(nonce: u64, payload: Vec<u8>) -> Self {
+        Self::new(MessageType::HandshakeResp, nonce, payload)
+    }
+
+    /// Oppretter en ny DataPayload-ramme.
+    pub fn data(nonce: u64, payload: Vec<u8>) -> Self {
+        Self::new(MessageType::DataPayload, nonce, payload)
+    }
+
+    /// Oppretter en ny Heartbeat-ramme.
+    pub fn heartbeat(nonce: u64, payload: Vec<u8>) -> Self {
+        Self::new(MessageType::Heartbeat, nonce, payload)
+    }
+
+    /// Oppretter en ny Close-ramme.
+    pub fn close(nonce: u64) -> Self {
+        Self::new(MessageType::Close, nonce, Vec::new())
+    }
+
     /// Sjekker om rammen representerer en handshake-pakke.
     pub fn is_handshake(&self) -> bool {
         matches!(
@@ -100,6 +125,11 @@ impl WireFrame {
     /// Returnerer lengden på rammens nyttelast i bytes.
     pub fn payload_len(&self) -> usize {
         self.payload.len()
+    }
+
+    /// Sjekker om rammens nyttelast er tom.
+    pub fn is_empty(&self) -> bool {
+        self.payload.is_empty()
     }
 
     /// Serialiserer rammen til binære bytes for overføring over TCP.
@@ -287,24 +317,32 @@ mod tests {
 
     #[test]
     fn test_wireframe_helpers_and_display() {
-        let data_frame = WireFrame::new(MessageType::DataPayload, 1, vec![1, 2, 3]);
+        let data_frame = WireFrame::data(1, vec![1, 2, 3]);
         assert!(data_frame.is_data());
         assert!(!data_frame.is_handshake());
         assert!(!data_frame.is_heartbeat());
         assert!(!data_frame.is_close());
         assert_eq!(data_frame.payload_len(), 3);
+        assert!(!data_frame.is_empty());
         assert_eq!(format!("{}", MessageType::DataPayload), "DataPayload");
 
-        let hs_frame = WireFrame::new(MessageType::HandshakeInit, 0, vec![]);
+        let hs_frame = WireFrame::handshake_init(0, vec![]);
         assert!(hs_frame.is_handshake());
+        assert!(hs_frame.is_empty());
         assert_eq!(format!("{}", MessageType::HandshakeInit), "HandshakeInit");
 
-        let hb_frame = WireFrame::new(MessageType::Heartbeat, 2, vec![]);
+        let hs_resp_frame = WireFrame::handshake_resp(0, vec![10, 20]);
+        assert!(hs_resp_frame.is_handshake());
+        assert_eq!(format!("{}", MessageType::HandshakeResp), "HandshakeResp");
+
+        let hb_frame = WireFrame::heartbeat(2, vec![]);
         assert!(hb_frame.is_heartbeat());
+        assert!(hb_frame.is_empty());
         assert_eq!(format!("{}", MessageType::Heartbeat), "Heartbeat");
 
-        let close_frame = WireFrame::new(MessageType::Close, 3, vec![]);
+        let close_frame = WireFrame::close(3);
         assert!(close_frame.is_close());
+        assert!(close_frame.is_empty());
         assert_eq!(format!("{}", MessageType::Close), "Close");
     }
 
