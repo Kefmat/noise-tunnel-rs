@@ -12,6 +12,7 @@ use crate::protocol::{hash_handshake_state, MessageType, WireFrame, PROTOCOL_NAM
 pub struct TunnelClient {
     server_pubkey: [u8; KEY_LEN],
     target_addr: SocketAddr,
+    timeout: Option<std::time::Duration>,
 }
 
 impl TunnelClient {
@@ -19,7 +20,24 @@ impl TunnelClient {
         Self {
             server_pubkey,
             target_addr,
+            timeout: None,
         }
+    }
+
+    /// Konfigurerer en timeout for nettverksoperasjoner og returnerer oppdatert klient (Builder pattern).
+    pub fn with_timeout(mut self, timeout: std::time::Duration) -> Self {
+        self.timeout = Some(timeout);
+        self
+    }
+
+    /// Returnerer eventuell konfigurert nettverkstimeout.
+    pub fn timeout(&self) -> Option<std::time::Duration> {
+        self.timeout
+    }
+
+    /// Oppdaterer timeout på en eksisterende klientinstans.
+    pub fn set_timeout(&mut self, timeout: Option<std::time::Duration>) {
+        self.timeout = timeout;
     }
 
     /// Returnerer målserverens adresse.
@@ -118,42 +136,52 @@ impl TunnelClient {
 
     /// Etablerer TCP-tilkobling, gjennomfører Noise-handshake, og sender én kryptert melding.
     pub async fn send_secure_message(&self, message: &str) -> Result<String> {
-        info!("Kobler til server på {}...", self.target_addr);
-        let mut stream = TcpStream::connect(self.target_addr).await?;
+        let op = async {
+            info!("Kobler til server på {}...", self.target_addr);
+            let mut stream = TcpStream::connect(self.target_addr).await?;
 
-        let (mut tx_cipher, mut rx_cipher) = self.perform_handshake(&mut stream).await?;
+            let (mut tx_cipher, mut rx_cipher) = self.perform_handshake(&mut stream).await?;
 
-        // Send den krypterte datameldingen over tunnelen
-        let tx_nonce = tx_cipher.current_nonce();
-        let encrypted_data = tx_cipher.encrypt(message.as_bytes(), b"tunnel-data")?;
+            // Send den krypterte datameldingen over tunnelen
+            let tx_nonce = tx_cipher.current_nonce();
+            let encrypted_data = tx_cipher.encrypt(message.as_bytes(), b"tunnel-data")?;
 
-        let data_frame = WireFrame::new(MessageType::DataPayload, tx_nonce, encrypted_data);
-        data_frame.write_to(&mut stream).await?;
-        info!(
-            "Sendte kryptert melding ({} bytes): \"{}\"",
-            message.len(),
-            message
-        );
+            let data_frame = WireFrame::new(MessageType::DataPayload, tx_nonce, encrypted_data);
+            data_frame.write_to(&mut stream).await?;
+            info!(
+                "Sendte kryptert melding ({} bytes): \"{}\"",
+                message.len(),
+                message
+            );
 
-        // Motta kryptert svar fra server
-        let reply_frame = WireFrame::read_from(&mut stream).await?;
-        if reply_frame.msg_type != MessageType::DataPayload {
-            return Err(anyhow!(
-                "Forventet kryptert svarmelding, mottok {:?}",
-                reply_frame.msg_type
-            ));
+            // Motta kryptert svar fra server
+            let reply_frame = WireFrame::read_from(&mut stream).await?;
+            if reply_frame.msg_type != MessageType::DataPayload {
+                return Err(anyhow!(
+                    "Forventet kryptert svarmelding, mottok {:?}",
+                    reply_frame.msg_type
+                ));
+            }
+
+            let decrypted_reply =
+                rx_cipher.decrypt(&reply_frame.payload, b"tunnel-data", reply_frame.nonce)?;
+            let reply_text = String::from_utf8(decrypted_reply)?;
+            info!("Dekryptert svar fra server: \"{}\"", reply_text);
+
+            // Send Close frame for ren avslutning
+            let close_frame = WireFrame::new(MessageType::Close, tx_cipher.current_nonce(), vec![]);
+            let _ = close_frame.write_to(&mut stream).await;
+
+            Ok(reply_text)
+        };
+
+        if let Some(dur) = self.timeout {
+            tokio::time::timeout(dur, op)
+                .await
+                .map_err(|_| anyhow!("Nettverksoperasjonen timet ut etter {:?}", dur))?
+        } else {
+            op.await
         }
-
-        let decrypted_reply =
-            rx_cipher.decrypt(&reply_frame.payload, b"tunnel-data", reply_frame.nonce)?;
-        let reply_text = String::from_utf8(decrypted_reply)?;
-        info!("Dekryptert svar fra server: \"{}\"", reply_text);
-
-        // Send Close frame for ren avslutning
-        let close_frame = WireFrame::new(MessageType::Close, tx_cipher.current_nonce(), vec![]);
-        let _ = close_frame.write_to(&mut stream).await;
-
-        Ok(reply_text)
     }
 
     /// Starter en interaktiv live sesjon over den krypterte tunnelen (REPL).
