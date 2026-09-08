@@ -10,14 +10,40 @@ use crate::crypto::{
 };
 use crate::protocol::{hash_handshake_state, MessageType, ReplayFilter, WireFrame, PROTOCOL_NAME};
 
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
+
 pub struct TunnelServer {
     keypair: KeyPair,
     bind_addr: SocketAddr,
+    max_connections: Option<usize>,
+    active_connections: Arc<AtomicUsize>,
 }
 
 impl TunnelServer {
     pub fn new(keypair: KeyPair, bind_addr: SocketAddr) -> Self {
-        Self { keypair, bind_addr }
+        Self {
+            keypair,
+            bind_addr,
+            max_connections: None,
+            active_connections: Arc::new(AtomicUsize::new(0)),
+        }
+    }
+
+    /// Setter maksimalt antall samtidige aktive klientforbindelser (Builder pattern).
+    pub fn with_max_connections(mut self, max: usize) -> Self {
+        self.max_connections = Some(max);
+        self
+    }
+
+    /// Returnerer eventuell konfigurert grense for samtidige forbindelser.
+    pub fn max_connections(&self) -> Option<usize> {
+        self.max_connections
+    }
+
+    /// Returnerer antall aktive klientforbindelser i øyeblikket.
+    pub fn active_connections(&self) -> usize {
+        self.active_connections.load(Ordering::Relaxed)
     }
 
     /// Returnerer serverens lytteadresse.
@@ -47,10 +73,27 @@ impl TunnelServer {
         loop {
             match listener.accept().await {
                 Ok((socket, peer_addr)) => {
+                    let active = self.active_connections.load(Ordering::Relaxed);
+                    if let Some(max) = self.max_connections {
+                        if active >= max {
+                            warn!(
+                                "Maks antall samtidige forbindelser ({}) nådd! Avviser {}",
+                                max, peer_addr
+                            );
+                            drop(socket);
+                            continue;
+                        }
+                    }
+
                     info!("Ny klient tilkoblet fra: {}", peer_addr);
                     let server_keys = self.keypair.clone();
+                    let counter = Arc::clone(&self.active_connections);
+                    counter.fetch_add(1, Ordering::Relaxed);
+
                     tokio::spawn(async move {
-                        if let Err(e) = Self::handle_client(socket, server_keys, peer_addr).await {
+                        let res = Self::handle_client(socket, server_keys, peer_addr).await;
+                        counter.fetch_sub(1, Ordering::Relaxed);
+                        if let Err(e) = res {
                             warn!("Feil eller sesjonsavbrudd for {}: {:?}", peer_addr, e);
                         }
                     });
