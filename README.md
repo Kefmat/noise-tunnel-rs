@@ -117,6 +117,48 @@ cargo run -- verify
 
 ---
 
+## Bibliotek-API og Eksempelbruk (Rust API)
+
+`noise-tunnel-rs` kan benyttes som et modulært bibliotek i andre prosjekter:
+
+```rust
+use noise_tunnel_rs::{TunnelClient, TunnelServer, KeyPair, SessionKeys, WireFrame, ReplayFilter};
+use std::time::Duration;
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    // 1. Generer nøkkelpar
+    let server_keypair = KeyPair::generate();
+    let server_addr = "127.0.0.1:8080".parse()?;
+
+    // 2. Start server med maksimalt antall samtidige sesjoner
+    let server = TunnelServer::new(server_keypair.clone(), server_addr)
+        .with_max_connections(100);
+
+    // 3. Konfigurer klient med timeout
+    let client = TunnelClient::new(server_keypair.public_key, server_addr)
+        .with_timeout(Duration::from_secs(5));
+
+    // 4. Send kryptert melding
+    // let response = client.send_secure_message("Hemmelig hilsen").await?;
+
+    // 5. Zero-I/O / Binær ramme-parsing
+    let frame = WireFrame::data(0, b"Kryptert innhold".to_vec());
+    let bytes = frame.serialize();
+    let parsed_frame = WireFrame::from_bytes(&bytes)?;
+    assert_eq!(parsed_frame, frame);
+
+    // 6. Anti-replay filter med sanntidsmetrikker
+    let mut replay_filter = ReplayFilter::new();
+    replay_filter.validate_and_record(0)?;
+    assert_eq!(replay_filter.total_accepted(), 1);
+
+    Ok(())
+}
+```
+
+---
+
 ## Ytelse & Benchmarking
 
 Kjør den integrerte ytelses-benchmarken:
@@ -147,4 +189,5 @@ cargo test --all-targets --verbose
 1. **Autentisering av Server:** Klienten krever serverens forhåndsdistribuerte offentlige nøkkel (`server-pubkey`) for å forhindre Man-in-the-Middle (MitM)-angrep under handshake.
 2. **Ephemerality (PFS):** Hver ny tilkobling genererer nye engangsnøkler (`e_c`, `e_s`). Selv om en nøkkel kompromitteres i fremtiden, kan ikke tidligere trafikk dekrypteres.
 3. **AEAD Mac Verifikasjon:** Hvert datapakke-segment verifiseres med en 16-byte Poly1305 MAC-tag før dekryptering aksepteres.
-4. **Glidevindu mot Replay:** Innebygd 128-bit bitmap-filter hindrer gjentatte pakkeangrep med null allokerings-overhead.
+4. **Glidevindu mot Replay:** Innebygd 128-bit bitmap-filter hindrer gjentatte pakkeangrep med sanntids-statistikk og null allokerings-overhead.
+5. **Zeroization:** `KeyPair` og `SessionKeys` implementerer `zeroize::ZeroizeOnDrop` for umiddelbar overskriving av minne ved destruksjon.
