@@ -207,12 +207,52 @@ impl CipherState {
     }
 }
 
-/// Nøkkelavledningsfunksjon (HKDF-SHA256) som splitter felles hemmelighet til to sesjonsnøkler.
-/// Returnerer `(client_to_server_key, server_to_client_key)`.
-pub fn derive_session_keys(
+/// Struktur som representerer et avledet sesjonsnøkkelpar for klient og server.
+#[derive(Clone, PartialEq, Eq, Zeroize, ZeroizeOnDrop)]
+pub struct SessionKeys {
+    pub client_write_key: [u8; KEY_LEN],
+    pub server_write_key: [u8; KEY_LEN],
+}
+
+impl std::fmt::Debug for SessionKeys {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SessionKeys")
+            .field("client_write_key", &"[REDACTED]")
+            .field("server_write_key", &"[REDACTED]")
+            .finish()
+    }
+}
+
+impl SessionKeys {
+    /// Oppretter en ny SessionKeys instans fra gitte nøkler.
+    pub fn new(client_write_key: [u8; KEY_LEN], server_write_key: [u8; KEY_LEN]) -> Self {
+        Self {
+            client_write_key,
+            server_write_key,
+        }
+    }
+
+    /// Returnerer referanse til klientens skrivenøkkel.
+    pub fn client_write_key(&self) -> &[u8; KEY_LEN] {
+        &self.client_write_key
+    }
+
+    /// Returnerer referanse til serverens skrivenøkkel.
+    pub fn server_write_key(&self) -> &[u8; KEY_LEN] {
+        &self.server_write_key
+    }
+
+    /// Konsumerer instansen og returnerer rå nøkler som en tuppel `(client_key, server_key)`.
+    pub fn into_parts(self) -> ([u8; KEY_LEN], [u8; KEY_LEN]) {
+        (self.client_write_key, self.server_write_key)
+    }
+}
+
+/// Nøkkelavledningsfunksjon (HKDF-SHA256) som splitter felles hemmelighet til en `SessionKeys`-struktur.
+pub fn derive_session_keypair(
     shared_secret: &[u8],
     handshake_hash: &[u8],
-) -> Result<([u8; KEY_LEN], [u8; KEY_LEN])> {
+) -> Result<SessionKeys> {
     let hk = Hkdf::<Sha256>::new(Some(handshake_hash), shared_secret);
 
     let mut client_write_key = [0u8; KEY_LEN];
@@ -224,7 +264,20 @@ pub fn derive_session_keys(
     hk.expand(b"noise-tunnel-server-write-key-v1", &mut server_write_key)
         .map_err(|e| anyhow!("HKDF expand for server key feilet: {:?}", e))?;
 
-    Ok((client_write_key, server_write_key))
+    Ok(SessionKeys {
+        client_write_key,
+        server_write_key,
+    })
+}
+
+/// Nøkkelavledningsfunksjon (HKDF-SHA256) som splitter felles hemmelighet til to sesjonsnøkler.
+/// Returnerer `(client_to_server_key, server_to_client_key)`.
+pub fn derive_session_keys(
+    shared_secret: &[u8],
+    handshake_hash: &[u8],
+) -> Result<([u8; KEY_LEN], [u8; KEY_LEN])> {
+    let keys = derive_session_keypair(shared_secret, handshake_hash)?;
+    Ok(keys.into_parts())
 }
 
 /// Utfører X25519 Diffie-Hellman beregning med efemer privatnøkkel og motpartens offentlige nøkkel.
@@ -366,5 +419,27 @@ mod tests {
         assert_eq!(keypair.public_key(), &keypair.public_key);
         assert_eq!(keypair.private_key(), &keypair.private_key);
         assert_eq!(keypair.as_ref(), &keypair.public_key);
+    }
+
+    #[test]
+    fn test_session_keys_struct_and_derivation() {
+        let secret = [0x77u8; KEY_LEN];
+        let hash = [0x88u8; 32];
+
+        let session_keys = derive_session_keypair(&secret, &hash).unwrap();
+        assert_eq!(session_keys.client_write_key(), &session_keys.client_write_key);
+        assert_eq!(session_keys.server_write_key(), &session_keys.server_write_key);
+        assert_ne!(session_keys.client_write_key(), session_keys.server_write_key());
+
+        let debug_str = format!("{:?}", session_keys);
+        assert!(debug_str.contains("SessionKeys"));
+        assert!(debug_str.contains("[REDACTED]"));
+
+        let (c_key, s_key) = session_keys.clone().into_parts();
+        assert_eq!(c_key, session_keys.client_write_key);
+        assert_eq!(s_key, session_keys.server_write_key);
+
+        let manual_keys = SessionKeys::new(c_key, s_key);
+        assert_eq!(manual_keys, session_keys);
     }
 }
