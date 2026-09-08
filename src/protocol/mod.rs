@@ -240,6 +240,9 @@ pub struct ReplayFilter {
     bitmap: u128,
     last_seq: u64,
     initialized: bool,
+    total_seen: u64,
+    total_accepted: u64,
+    total_rejected: u64,
 }
 
 impl Default for ReplayFilter {
@@ -260,15 +263,21 @@ impl ReplayFilter {
             bitmap: 0,
             last_seq: 0,
             initialized: false,
+            total_seen: 0,
+            total_accepted: 0,
+            total_rejected: 0,
         }
     }
 
     /// Validerer om en nonce er gyldig og aldri har vært sett før.
     pub fn validate_and_record(&mut self, seq: u64) -> Result<()> {
+        self.total_seen += 1;
+
         if !self.initialized {
             self.last_seq = seq;
             self.bitmap = 1;
             self.initialized = true;
+            self.total_accepted += 1;
             return Ok(());
         }
 
@@ -281,10 +290,12 @@ impl ReplayFilter {
                 self.bitmap = 1;
             }
             self.last_seq = seq;
+            self.total_accepted += 1;
             Ok(())
         } else {
             let diff = self.last_seq - seq;
             if diff >= self.window_size {
+                self.total_rejected += 1;
                 return Err(anyhow!(
                     "REPLAY DETECTED! Sekvensnummer {} er for gammelt (utenfor vinduet på {})",
                     seq,
@@ -294,6 +305,7 @@ impl ReplayFilter {
 
             let bit = 1u128 << diff;
             if (self.bitmap & bit) != 0 {
+                self.total_rejected += 1;
                 return Err(anyhow!(
                     "REPLAY DETECTED! Sekvensnummer {} har allerede blitt prosessert!",
                     seq
@@ -301,6 +313,7 @@ impl ReplayFilter {
             }
 
             self.bitmap |= bit;
+            self.total_accepted += 1;
             Ok(())
         }
     }
@@ -320,11 +333,29 @@ impl ReplayFilter {
         self.initialized
     }
 
-    /// Tilbakestiller filtertilstanden til utgangspunktet.
+    /// Returnerer totalt antall pakker som har blitt validert.
+    pub fn total_seen(&self) -> u64 {
+        self.total_seen
+    }
+
+    /// Returnerer totalt antall godkjente pakker.
+    pub fn total_accepted(&self) -> u64 {
+        self.total_accepted
+    }
+
+    /// Returnerer totalt antall avviste replay- eller utdaterte pakker.
+    pub fn total_rejected(&self) -> u64 {
+        self.total_rejected
+    }
+
+    /// Tilbakestiller filtertilstanden og tellerne til utgangspunktet.
     pub fn reset(&mut self) {
         self.bitmap = 0;
         self.last_seq = 0;
         self.initialized = false;
+        self.total_seen = 0;
+        self.total_accepted = 0;
+        self.total_rejected = 0;
     }
 }
 
@@ -506,5 +537,30 @@ mod tests {
         let mut corrupted_type = serialized.clone();
         corrupted_type[4] = 0xFE;
         assert!(WireFrame::from_bytes(&corrupted_type).is_err());
+    }
+
+    #[test]
+    fn test_replay_filter_metrics() {
+        let mut filter = ReplayFilter::new();
+        assert_eq!(filter.total_seen(), 0);
+        assert_eq!(filter.total_accepted(), 0);
+        assert_eq!(filter.total_rejected(), 0);
+
+        assert!(filter.validate_and_record(10).is_ok());
+        assert!(filter.validate_and_record(11).is_ok());
+        assert_eq!(filter.total_seen(), 2);
+        assert_eq!(filter.total_accepted(), 2);
+        assert_eq!(filter.total_rejected(), 0);
+
+        // Replay attempt
+        assert!(filter.validate_and_record(10).is_err());
+        assert_eq!(filter.total_seen(), 3);
+        assert_eq!(filter.total_accepted(), 2);
+        assert_eq!(filter.total_rejected(), 1);
+
+        filter.reset();
+        assert_eq!(filter.total_seen(), 0);
+        assert_eq!(filter.total_accepted(), 0);
+        assert_eq!(filter.total_rejected(), 0);
     }
 }
