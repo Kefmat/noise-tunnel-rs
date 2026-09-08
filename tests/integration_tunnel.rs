@@ -405,3 +405,55 @@ async fn test_multiple_rapid_heartbeats_in_session() -> Result<()> {
 
     Ok(())
 }
+
+#[tokio::test]
+async fn test_wireframe_from_bytes_integration() -> Result<()> {
+    use noise_tunnel_rs::protocol::WireFrame;
+
+    let frames = vec![
+        WireFrame::handshake_init(0, vec![1, 2, 3, 4, 5]),
+        WireFrame::handshake_resp(0, vec![6, 7, 8, 9, 10]),
+        WireFrame::data(12345, b"Test payload bytes".to_vec()),
+        WireFrame::heartbeat(999, b"PING".to_vec()),
+        WireFrame::close(1000),
+    ];
+
+    for frame in frames {
+        let serialized = frame.serialize();
+        let parsed = WireFrame::from_bytes(&serialized)?;
+        assert_eq!(parsed, frame);
+
+        let try_parsed = WireFrame::try_from(serialized.as_slice())?;
+        assert_eq!(try_parsed, frame);
+    }
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_client_server_builder_configs() -> Result<()> {
+    let keypair = KeyPair::generate();
+    let addr: std::net::SocketAddr = "127.0.0.1:8888".parse()?;
+
+    // Server builder
+    let server = TunnelServer::new(keypair.clone(), addr).with_max_connections(50);
+    assert_eq!(server.max_connections(), Some(50));
+    assert_eq!(server.active_connections(), 0);
+
+    // Client builder
+    let timeout = std::time::Duration::from_secs(5);
+    let client = TunnelClient::new(keypair.public_key, addr).with_timeout(timeout);
+    assert_eq!(client.timeout(), Some(timeout));
+
+    // Live execution with configured client
+    let (server_keys, server_addr) = spawn_test_server().await?;
+    let live_client = TunnelClient::new(server_keys.public_key, server_addr)
+        .with_timeout(std::time::Duration::from_secs(3));
+
+    let reply = live_client
+        .send_secure_message("Builder test med timeout")
+        .await?;
+    assert!(reply.contains("Builder test med timeout"));
+
+    Ok(())
+}
