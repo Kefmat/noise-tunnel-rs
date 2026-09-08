@@ -153,6 +153,46 @@ impl WireFrame {
         Ok(())
     }
 
+    /// Deserialiserer en WireFrame fra en komplett serialisert byte-buffer (inkludert 4-byte lengdeprefiks).
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
+        if bytes.len() < 13 {
+            return Err(anyhow!(
+                "Mottok for kort buffer for WireFrame: {} bytes (krever minst 13 bytes)",
+                bytes.len()
+            ));
+        }
+
+        let frame_len = u32::from_be_bytes(bytes[0..4].try_into()?) as usize;
+        if frame_len != bytes.len() - 4 {
+            return Err(anyhow!(
+                "Uoverensstemmelse i rammelengde: spesifisert {}, faktisk bufferlengde {}",
+                frame_len,
+                bytes.len() - 4
+            ));
+        }
+
+        if frame_len < 9 {
+            return Err(anyhow!("Mottok for kort wire-ramme: {} bytes", frame_len));
+        }
+
+        if frame_len > MAX_FRAME_SIZE {
+            return Err(anyhow!(
+                "Mottok overdimensjonert pakke ({}), avviser for å forhindre DoS",
+                frame_len
+            ));
+        }
+
+        let msg_type = MessageType::try_from(bytes[4])?;
+        let nonce = u64::from_be_bytes(bytes[5..13].try_into()?);
+        let payload = bytes[13..].to_vec();
+
+        Ok(WireFrame {
+            msg_type,
+            nonce,
+            payload,
+        })
+    }
+
     /// Leser en komplett ramme asynkront fra en TCP-stream med beskyttelse mot buffer-overflow.
     pub async fn read_from<R: AsyncReadExt + Unpin>(stream: &mut R) -> Result<Self> {
         let mut len_buf = [0u8; 4];
@@ -181,6 +221,14 @@ impl WireFrame {
             nonce,
             payload,
         })
+    }
+}
+
+impl TryFrom<&[u8]> for WireFrame {
+    type Error = anyhow::Error;
+
+    fn try_from(bytes: &[u8]) -> Result<Self> {
+        Self::from_bytes(bytes)
     }
 }
 
@@ -433,5 +481,30 @@ mod tests {
 
         // Can accept 42 again after reset
         assert!(filter.validate_and_record(42).is_ok());
+    }
+
+    #[test]
+    fn test_wireframe_from_bytes_roundtrip_and_errors() {
+        let frame = WireFrame::data(100, b"Buffer Data".to_vec());
+        let serialized = frame.serialize();
+
+        let parsed = WireFrame::from_bytes(&serialized).unwrap();
+        assert_eq!(parsed, frame);
+
+        let try_from_parsed = WireFrame::try_from(serialized.as_slice()).unwrap();
+        assert_eq!(try_from_parsed, frame);
+
+        // For kort buffer (< 13 bytes)
+        assert!(WireFrame::from_bytes(&[0u8; 10]).is_err());
+
+        // Ugyldig rammelengde i header
+        let mut corrupted_len = serialized.clone();
+        corrupted_len[0..4].copy_from_slice(&500u32.to_be_bytes());
+        assert!(WireFrame::from_bytes(&corrupted_len).is_err());
+
+        // Ugyldig meldingstype
+        let mut corrupted_type = serialized.clone();
+        corrupted_type[4] = 0xFE;
+        assert!(WireFrame::from_bytes(&corrupted_type).is_err());
     }
 }
