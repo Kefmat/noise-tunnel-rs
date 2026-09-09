@@ -131,21 +131,25 @@ async fn main() -> anyhow::Result<()> {
     let server_keypair = KeyPair::generate();
     let server_addr = "127.0.0.1:8080".parse()?;
 
-    // 2. Start server med maksimalt antall samtidige sesjoner
+    // 2. Start server med tilpasset prologue og forbindelsesgrense
     let server = TunnelServer::new(server_keypair.clone(), server_addr)
+        .with_prologue(b"MyEnterpriseApp_v1")
         .with_max_connections(100);
 
-    // 3. Konfigurer klient med timeout
+    // 3. Konfigurer klient med matchende prologue og timeout
     let client = TunnelClient::new(server_keypair.public_key, server_addr)
+        .with_prologue(b"MyEnterpriseApp_v1")
         .with_timeout(Duration::from_secs(5));
 
     // 4. Send kryptert melding
     // let response = client.send_secure_message("Hemmelig hilsen").await?;
 
-    // 5. Zero-I/O / Binær ramme-parsing
+    // 5. Zero-I/O / Binær ramme-parsing og buffer-gjenbruk
     let frame = WireFrame::data(0, b"Kryptert innhold".to_vec());
-    let bytes = frame.serialize();
-    let parsed_frame = WireFrame::from_bytes(&bytes)?;
+    let mut buffer = Vec::new();
+    frame.serialize_into(&mut buffer);
+
+    let parsed_frame = WireFrame::from_bytes(&buffer)?;
     assert_eq!(parsed_frame, frame);
 
     // 6. Anti-replay filter med sanntidsmetrikker
