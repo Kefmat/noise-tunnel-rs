@@ -132,6 +132,24 @@ impl WireFrame {
         self.payload.is_empty()
     }
 
+    /// Returnerer de 9 byte-headerne til rammen ([1 byte type] + [8 bytes nonce]).
+    pub fn header_bytes(&self) -> [u8; 9] {
+        let mut header = [0u8; 9];
+        header[0] = self.msg_type as u8;
+        header[1..9].copy_from_slice(&self.nonce.to_be_bytes());
+        header
+    }
+
+    /// Returnerer en kompakt oppsummering av rammens metadata (type, nonce, payload-størrelse).
+    pub fn summary(&self) -> String {
+        format!(
+            "WireFrame(type={}, nonce={}, payload_len={}B)",
+            self.msg_type,
+            self.nonce,
+            self.payload.len()
+        )
+    }
+
     /// Serialiserer rammen til binære bytes for overføring over TCP.
     pub fn serialize(&self) -> Vec<u8> {
         let payload_len = self.payload.len();
@@ -423,6 +441,15 @@ mod tests {
         assert!(close_frame.is_close());
         assert!(close_frame.is_empty());
         assert_eq!(format!("{}", MessageType::Close), "Close");
+
+        let header = data_frame.header_bytes();
+        assert_eq!(header[0], MessageType::DataPayload as u8);
+        assert_eq!(&header[1..9], &1u64.to_be_bytes());
+
+        let summary = data_frame.summary();
+        assert!(summary.contains("DataPayload"));
+        assert!(summary.contains("nonce=1"));
+        assert!(summary.contains("payload_len=3B"));
     }
 
     #[test]
