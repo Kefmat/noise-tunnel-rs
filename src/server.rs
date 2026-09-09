@@ -18,6 +18,7 @@ pub struct TunnelServer {
     bind_addr: SocketAddr,
     max_connections: Option<usize>,
     active_connections: Arc<AtomicUsize>,
+    prologue: Vec<u8>,
 }
 
 impl TunnelServer {
@@ -27,6 +28,7 @@ impl TunnelServer {
             bind_addr,
             max_connections: None,
             active_connections: Arc::new(AtomicUsize::new(0)),
+            prologue: PROTOCOL_NAME.to_vec(),
         }
     }
 
@@ -36,9 +38,20 @@ impl TunnelServer {
         self
     }
 
+    /// Konfigurerer en tilpasset protokoll-prologue/identifikator for sesjonsbinding.
+    pub fn with_prologue(mut self, prologue: &[u8]) -> Self {
+        self.prologue = prologue.to_vec();
+        self
+    }
+
     /// Returnerer eventuell konfigurert grense for samtidige forbindelser.
     pub fn max_connections(&self) -> Option<usize> {
         self.max_connections
+    }
+
+    /// Returnerer gjeldende protokoll-prologue.
+    pub fn prologue(&self) -> &[u8] {
+        &self.prologue
     }
 
     /// Returnerer antall aktive klientforbindelser i øyeblikket.
@@ -88,10 +101,13 @@ impl TunnelServer {
                     info!("Ny klient tilkoblet fra: {}", peer_addr);
                     let server_keys = self.keypair.clone();
                     let counter = Arc::clone(&self.active_connections);
+                    let prologue = self.prologue.clone();
                     counter.fetch_add(1, Ordering::Relaxed);
 
                     tokio::spawn(async move {
-                        let res = Self::handle_client(socket, server_keys, peer_addr).await;
+                        let res =
+                            Self::handle_client_with_prologue(socket, server_keys, peer_addr, &prologue)
+                                .await;
                         counter.fetch_sub(1, Ordering::Relaxed);
                         if let Err(e) = res {
                             warn!("Feil eller sesjonsavbrudd for {}: {:?}", peer_addr, e);
@@ -105,11 +121,21 @@ impl TunnelServer {
         }
     }
 
-    /// Utfører Noise-handshake og oppretter en kryptert toveis tunnel for klienten.
+    /// Utfører Noise-handshake med standard protokoll-prologue.
     pub async fn handle_client(
+        stream: TcpStream,
+        server_keys: KeyPair,
+        peer_addr: SocketAddr,
+    ) -> Result<()> {
+        Self::handle_client_with_prologue(stream, server_keys, peer_addr, PROTOCOL_NAME).await
+    }
+
+    /// Utfører Noise-handshake og oppretter en kryptert toveis tunnel for klienten med gitt prologue.
+    pub async fn handle_client_with_prologue(
         mut stream: TcpStream,
         server_keys: KeyPair,
         peer_addr: SocketAddr,
+        prologue: &[u8],
     ) -> Result<()> {
         // 1. Motta HandshakeInit fra klient
         let init_frame = WireFrame::read_from(&mut stream).await?;
@@ -131,7 +157,7 @@ impl TunnelServer {
         // 2. Beregn statisk Diffie-Hellman: DH(e_c, s_s)
         let dh_static = diffie_hellman(&server_keys.private_key, &client_ephemeral);
         let h1 = hash_handshake_state(
-            PROTOCOL_NAME,
+            prologue,
             &client_ephemeral,
             &server_keys.public_key,
             None,
@@ -153,7 +179,7 @@ impl TunnelServer {
         combined_secret.extend_from_slice(&dh_ephem);
 
         let h2 = hash_handshake_state(
-            PROTOCOL_NAME,
+            prologue,
             &client_ephemeral,
             &server_keys.public_key,
             Some(&server_ephem_pub),
