@@ -13,6 +13,7 @@ pub struct TunnelClient {
     server_pubkey: [u8; KEY_LEN],
     target_addr: SocketAddr,
     timeout: Option<std::time::Duration>,
+    prologue: Vec<u8>,
 }
 
 impl TunnelClient {
@@ -21,6 +22,7 @@ impl TunnelClient {
             server_pubkey,
             target_addr,
             timeout: None,
+            prologue: PROTOCOL_NAME.to_vec(),
         }
     }
 
@@ -30,9 +32,20 @@ impl TunnelClient {
         self
     }
 
+    /// Konfigurerer en tilpasset protokoll-prologue/identifikator for sesjonsbinding.
+    pub fn with_prologue(mut self, prologue: &[u8]) -> Self {
+        self.prologue = prologue.to_vec();
+        self
+    }
+
     /// Returnerer eventuell konfigurert nettverkstimeout.
     pub fn timeout(&self) -> Option<std::time::Duration> {
         self.timeout
+    }
+
+    /// Returnerer gjeldende protokoll-prologue.
+    pub fn prologue(&self) -> &[u8] {
+        &self.prologue
     }
 
     /// Oppdaterer timeout på en eksisterende klientinstans.
@@ -66,7 +79,7 @@ impl TunnelClient {
 
         // 2. Beregn statisk DH(e_c, s_s) med serverens kjente offentlige nøkkel
         let dh_static = client_ephemeral.diffie_hellman(&self.server_pubkey);
-        let h1 = hash_handshake_state(PROTOCOL_NAME, &client_ephem_pub, &self.server_pubkey, None);
+        let h1 = hash_handshake_state(&self.prologue, &client_ephem_pub, &self.server_pubkey, None);
 
         // Krypter HandshakeInit payload
         let (k_init_c, _) = derive_session_keys(&dh_static, &h1)?;
@@ -104,7 +117,7 @@ impl TunnelClient {
         let dh_ephem = client_ephemeral.diffie_hellman(&server_ephemeral_pub);
 
         let h2 = hash_handshake_state(
-            PROTOCOL_NAME,
+            &self.prologue,
             &client_ephem_pub,
             &self.server_pubkey,
             Some(&server_ephemeral_pub),
