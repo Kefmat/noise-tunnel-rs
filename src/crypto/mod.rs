@@ -232,6 +232,31 @@ impl SessionKeys {
         }
     }
 
+    /// Oppretter SessionKeys fra to byte-slices med lengdevalidering (32 bytes hver).
+    pub fn from_slices(client_key: &[u8], server_key: &[u8]) -> Result<Self> {
+        if client_key.len() != KEY_LEN {
+            return Err(anyhow!(
+                "Klient-skrivenøkkel må være {} bytes, mottok {}",
+                KEY_LEN,
+                client_key.len()
+            ));
+        }
+        if server_key.len() != KEY_LEN {
+            return Err(anyhow!(
+                "Server-skrivenøkkel må være {} bytes, mottok {}",
+                KEY_LEN,
+                server_key.len()
+            ));
+        }
+
+        let mut client_arr = [0u8; KEY_LEN];
+        let mut server_arr = [0u8; KEY_LEN];
+        client_arr.copy_from_slice(client_key);
+        server_arr.copy_from_slice(server_key);
+
+        Ok(Self::new(client_arr, server_arr))
+    }
+
     /// Returnerer referanse til klientens skrivenøkkel.
     pub fn client_write_key(&self) -> &[u8; KEY_LEN] {
         &self.client_write_key
@@ -245,6 +270,18 @@ impl SessionKeys {
     /// Konsumerer instansen og returnerer rå nøkler som en tuppel `(client_key, server_key)`.
     pub fn into_parts(self) -> ([u8; KEY_LEN], [u8; KEY_LEN]) {
         (self.client_write_key, self.server_write_key)
+    }
+}
+
+impl From<([u8; KEY_LEN], [u8; KEY_LEN])> for SessionKeys {
+    fn from(keys: ([u8; KEY_LEN], [u8; KEY_LEN])) -> Self {
+        Self::new(keys.0, keys.1)
+    }
+}
+
+impl From<SessionKeys> for ([u8; KEY_LEN], [u8; KEY_LEN]) {
+    fn from(keys: SessionKeys) -> Self {
+        keys.into_parts()
     }
 }
 
@@ -441,5 +478,27 @@ mod tests {
 
         let manual_keys = SessionKeys::new(c_key, s_key);
         assert_eq!(manual_keys, session_keys);
+    }
+
+    #[test]
+    fn test_session_keys_from_slices_and_conversions() {
+        let c = [0x11u8; KEY_LEN];
+        let s = [0x22u8; KEY_LEN];
+
+        let keys = SessionKeys::from_slices(&c, &s).unwrap();
+        assert_eq!(keys.client_write_key(), &c);
+        assert_eq!(keys.server_write_key(), &s);
+
+        // Ugyldig slice lengde
+        assert!(SessionKeys::from_slices(&[0u8; 10], &s).is_err());
+        assert!(SessionKeys::from_slices(&c, &[0u8; 10]).is_err());
+
+        // From / Into conversions
+        let tuple: ([u8; KEY_LEN], [u8; KEY_LEN]) = (c, s);
+        let from_tuple: SessionKeys = tuple.into();
+        assert_eq!(from_tuple, keys);
+
+        let back_to_tuple: ([u8; KEY_LEN], [u8; KEY_LEN]) = from_tuple.into();
+        assert_eq!(back_to_tuple, (c, s));
     }
 }
