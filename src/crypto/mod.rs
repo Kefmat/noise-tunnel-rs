@@ -132,6 +132,15 @@ pub struct CipherState {
     nonce: u64,
 }
 
+impl std::fmt::Debug for CipherState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CipherState")
+            .field("key", &"[REDACTED]")
+            .field("nonce", &self.nonce)
+            .finish()
+    }
+}
+
 impl CipherState {
     /// Initialiserer CipherState med en avledet 32-byte symmetrisk nøkkel.
     pub fn new(key: [u8; KEY_LEN]) -> Self {
@@ -141,6 +150,18 @@ impl CipherState {
     /// Nåværende nonce-teller.
     pub fn current_nonce(&self) -> u64 {
         self.nonce
+    }
+
+    /// Oppdaterer nøkkelen og nullstiller nonce-telleren (rekeying).
+    pub fn rekey(&mut self, new_key: [u8; KEY_LEN]) {
+        self.key.zeroize();
+        self.key = new_key;
+        self.nonce = 0;
+    }
+
+    /// Tilbakestiller nonce-telleren til 0 uten å endre nøkkelen.
+    pub fn reset_nonce(&mut self) {
+        self.nonce = 0;
     }
 
     /// Lager en 12-byte nonce fra en 64-bit monotont økende teller (Little-Endian med null-padding).
@@ -500,5 +521,26 @@ mod tests {
 
         let back_to_tuple: ([u8; KEY_LEN], [u8; KEY_LEN]) = from_tuple.into();
         assert_eq!(back_to_tuple, (c, s));
+    }
+
+    #[test]
+    fn test_cipher_state_rekey_and_reset() {
+        let mut cipher = CipherState::new([0x33u8; KEY_LEN]);
+        assert_eq!(cipher.current_nonce(), 0);
+
+        let _ct1 = cipher.encrypt(b"msg 1", b"aad").unwrap();
+        assert_eq!(cipher.current_nonce(), 1);
+
+        cipher.reset_nonce();
+        assert_eq!(cipher.current_nonce(), 0);
+
+        let new_key = [0x44u8; KEY_LEN];
+        cipher.rekey(new_key);
+        assert_eq!(cipher.current_nonce(), 0);
+
+        let debug_str = format!("{:?}", cipher);
+        assert!(debug_str.contains("CipherState"));
+        assert!(debug_str.contains("[REDACTED]"));
+        assert!(debug_str.contains("nonce: 0"));
     }
 }
