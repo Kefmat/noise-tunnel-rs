@@ -501,3 +501,100 @@ async fn test_custom_prologue_agreement_and_mismatch() -> Result<()> {
 
     Ok(())
 }
+
+#[tokio::test]
+async fn test_full_duplex_session_with_serialize_into_and_replay_stats() -> Result<()> {
+    use noise_tunnel_rs::crypto::{derive_session_keys, CipherState, EphemeralKeyPair, KEY_LEN};
+    use noise_tunnel_rs::protocol::{hash_handshake_state, ReplayFilter, WireFrame, PROTOCOL_NAME};
+    use tokio::net::TcpStream;
+
+    let (server_keypair, server_addr) = spawn_test_server().await?;
+    let mut stream = TcpStream::connect(server_addr).await?;
+
+    // Client handshake
+    let client_ephem = EphemeralKeyPair::generate();
+    let dh_static = client_ephem.diffie_hellman(&server_keypair.public_key);
+    let h1 = hash_handshake_state(
+        PROTOCOL_NAME,
+        &client_ephem.public_key,
+        &server_keypair.public_key,
+        None,
+    );
+
+    let (k_init_c, _) = derive_session_keys(&dh_static, &h1)?;
+    let mut init_cipher = CipherState::new(k_init_c);
+    let init_ciphertext = init_cipher.encrypt(b"HANDSHAKE_INIT_CLIENT", &h1)?;
+
+    let mut init_payload = Vec::new();
+    init_payload.extend_from_slice(&client_ephem.public_key);
+    init_payload.extend_from_slice(&init_ciphertext);
+
+    let init_frame = WireFrame::handshake_init(0, init_payload);
+    let mut write_buf = Vec::new();
+    init_frame.serialize_into(&mut write_buf);
+    use tokio::io::AsyncWriteExt;
+    stream.write_all(&write_buf).await?;
+    stream.flush().await?;
+
+    // Read HandshakeResp
+    let resp_frame = WireFrame::read_from(&mut stream).await?;
+    let mut server_ephem_pub = [0u8; KEY_LEN];
+    server_ephem_pub.copy_from_slice(&resp_frame.payload[..KEY_LEN]);
+    let dh_ephem = client_ephem.diffie_hellman(&server_ephem_pub);
+    let h2 = hash_handshake_state(
+        PROTOCOL_NAME,
+        &client_ephem.public_key,
+        &server_keypair.public_key,
+        Some(&server_ephem_pub),
+    );
+
+    let (_, k_resp_s) = derive_session_keys(&dh_ephem, &h2)?;
+    let mut resp_cipher = CipherState::new(k_resp_s);
+    let ack = resp_cipher.decrypt(&resp_frame.payload[KEY_LEN..], &h2, 0)?;
+    assert_eq!(ack, b"HANDSHAKE_COMPLETE_ACK");
+
+    let mut combined_secret = Vec::with_capacity(KEY_LEN * 2);
+    combined_secret.extend_from_slice(&dh_static);
+    combined_secret.extend_from_slice(&dh_ephem);
+
+    let (client_write_key, server_write_key) = derive_session_keys(&combined_secret, &h2)?;
+    let mut tx = CipherState::new(client_write_key);
+    let mut rx = CipherState::new(server_write_key);
+    let mut local_replay_filter = ReplayFilter::new();
+
+    // Send 3 data frames reusing write buffer
+    for i in 0..3 {
+        let nonce = tx.current_nonce();
+        let msg = format!("Buffer gjenbruk melding #{}", i);
+        let ct = tx.encrypt(msg.as_bytes(), b"tunnel-data")?;
+        let frame = WireFrame::data(nonce, ct);
+
+        write_buf.clear();
+        frame.serialize_into(&mut write_buf);
+        stream.write_all(&write_buf).await?;
+        stream.flush().await?;
+
+        let reply = WireFrame::read_from(&mut stream).await?;
+        assert!(reply.is_data());
+        local_replay_filter.validate_and_record(reply.nonce)?;
+
+        let decrypted = rx.decrypt(&reply.payload, b"tunnel-data", reply.nonce)?;
+        assert_eq!(
+            String::from_utf8_lossy(&decrypted),
+            format!("Server mottok: {}", msg)
+        );
+    }
+
+    assert_eq!(local_replay_filter.total_seen(), 3);
+    assert_eq!(local_replay_filter.total_accepted(), 3);
+    assert_eq!(local_replay_filter.total_rejected(), 0);
+
+    // Close session
+    let close = WireFrame::close(tx.current_nonce());
+    write_buf.clear();
+    close.serialize_into(&mut write_buf);
+    stream.write_all(&write_buf).await?;
+    stream.flush().await?;
+
+    Ok(())
+}
