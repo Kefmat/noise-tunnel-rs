@@ -457,3 +457,47 @@ async fn test_client_server_builder_configs() -> Result<()> {
 
     Ok(())
 }
+
+#[tokio::test]
+async fn test_custom_prologue_agreement_and_mismatch() -> Result<()> {
+    let server_keypair = KeyPair::generate();
+    let listener = TcpListener::bind("127.0.0.1:0").await?;
+    let server_addr = listener.local_addr()?;
+    drop(listener);
+
+    let custom_prologue = b"Noise_Custom_App_Namespace_v2";
+
+    let server = TunnelServer::new(server_keypair.clone(), server_addr)
+        .with_prologue(custom_prologue);
+    assert_eq!(server.prologue(), custom_prologue);
+
+    tokio::spawn(async move {
+        let _ = server.run().await;
+    });
+
+    tokio::time::sleep(tokio::time::Duration::from_millis(60)).await;
+
+    // 1. Client with matching custom prologue -> Handshake succeeds
+    let client_matching = TunnelClient::new(server_keypair.public_key, server_addr)
+        .with_prologue(custom_prologue);
+    assert_eq!(client_matching.prologue(), custom_prologue);
+
+    let res = client_matching
+        .send_secure_message("Melding med tilpasset prologue")
+        .await?;
+    assert!(res.contains("Melding med tilpasset prologue"));
+
+    // 2. Client with mismatched prologue -> Handshake fails due to transcript binding
+    let client_mismatched = TunnelClient::new(server_keypair.public_key, server_addr)
+        .with_prologue(b"Noise_Mismatch_Namespace_v1");
+
+    let err_res = client_mismatched
+        .send_secure_message("Skal feile pga feil prologue")
+        .await;
+    assert!(
+        err_res.is_err(),
+        "Handshake med uoverensstemmende prologue må feile!"
+    );
+
+    Ok(())
+}
