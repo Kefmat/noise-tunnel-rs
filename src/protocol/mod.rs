@@ -150,16 +150,22 @@ impl WireFrame {
         )
     }
 
-    /// Serialiserer rammen til binære bytes for overføring over TCP.
-    pub fn serialize(&self) -> Vec<u8> {
+    /// Serialiserer rammen direkte inn i en eksisterende byte-buffer uten nye allokeringer.
+    pub fn serialize_into(&self, buffer: &mut Vec<u8>) {
         let payload_len = self.payload.len();
         let total_frame_len = 1 + 8 + payload_len; // Type (1) + Nonce (8) + Payload
-        let mut buffer = Vec::with_capacity(4 + total_frame_len);
+        buffer.reserve(4 + total_frame_len);
 
         buffer.extend_from_slice(&(total_frame_len as u32).to_be_bytes());
         buffer.push(self.msg_type as u8);
         buffer.extend_from_slice(&self.nonce.to_be_bytes());
         buffer.extend_from_slice(&self.payload);
+    }
+
+    /// Serialiserer rammen til binære bytes for overføring over TCP.
+    pub fn serialize(&self) -> Vec<u8> {
+        let mut buffer = Vec::new();
+        self.serialize_into(&mut buffer);
         buffer
     }
 
@@ -589,5 +595,23 @@ mod tests {
         assert_eq!(filter.total_seen(), 0);
         assert_eq!(filter.total_accepted(), 0);
         assert_eq!(filter.total_rejected(), 0);
+    }
+
+    #[test]
+    fn test_wireframe_serialize_into_buffer_reuse() {
+        let frame1 = WireFrame::data(1, b"first".to_vec());
+        let frame2 = WireFrame::data(2, b"second".to_vec());
+
+        let mut buffer = Vec::new();
+        frame1.serialize_into(&mut buffer);
+        let len1 = buffer.len();
+
+        let parsed1 = WireFrame::from_bytes(&buffer[..len1]).unwrap();
+        assert_eq!(parsed1, frame1);
+
+        buffer.clear();
+        frame2.serialize_into(&mut buffer);
+        let parsed2 = WireFrame::from_bytes(&buffer).unwrap();
+        assert_eq!(parsed2, frame2);
     }
 }
