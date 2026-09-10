@@ -307,10 +307,7 @@ impl From<SessionKeys> for ([u8; KEY_LEN], [u8; KEY_LEN]) {
 }
 
 /// Nøkkelavledningsfunksjon (HKDF-SHA256) som splitter felles hemmelighet til en `SessionKeys`-struktur.
-pub fn derive_session_keypair(
-    shared_secret: &[u8],
-    handshake_hash: &[u8],
-) -> Result<SessionKeys> {
+pub fn derive_session_keypair(shared_secret: &[u8], handshake_hash: &[u8]) -> Result<SessionKeys> {
     let hk = Hkdf::<Sha256>::new(Some(handshake_hash), shared_secret);
 
     let mut client_write_key = [0u8; KEY_LEN];
@@ -485,9 +482,18 @@ mod tests {
         let hash = [0x88u8; 32];
 
         let session_keys = derive_session_keypair(&secret, &hash).unwrap();
-        assert_eq!(session_keys.client_write_key(), &session_keys.client_write_key);
-        assert_eq!(session_keys.server_write_key(), &session_keys.server_write_key);
-        assert_ne!(session_keys.client_write_key(), session_keys.server_write_key());
+        assert_eq!(
+            session_keys.client_write_key(),
+            &session_keys.client_write_key
+        );
+        assert_eq!(
+            session_keys.server_write_key(),
+            &session_keys.server_write_key
+        );
+        assert_ne!(
+            session_keys.client_write_key(),
+            session_keys.server_write_key()
+        );
 
         let debug_str = format!("{:?}", session_keys);
         assert!(debug_str.contains("SessionKeys"));

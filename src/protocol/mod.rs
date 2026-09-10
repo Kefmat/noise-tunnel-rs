@@ -393,7 +393,11 @@ impl std::fmt::Display for ReplayFilter {
         write!(
             f,
             "ReplayFilter(window={}, last_seq={}, accepted={}/{}, rejected={})",
-            self.window_size, self.last_seq, self.total_accepted, self.total_seen, self.total_rejected
+            self.window_size,
+            self.last_seq,
+            self.total_accepted,
+            self.total_seen,
+            self.total_rejected
         )
     }
 }

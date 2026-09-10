@@ -467,8 +467,8 @@ async fn test_custom_prologue_agreement_and_mismatch() -> Result<()> {
 
     let custom_prologue = b"Noise_Custom_App_Namespace_v2";
 
-    let server = TunnelServer::new(server_keypair.clone(), server_addr)
-        .with_prologue(custom_prologue);
+    let server =
+        TunnelServer::new(server_keypair.clone(), server_addr).with_prologue(custom_prologue);
     assert_eq!(server.prologue(), custom_prologue);
 
     tokio::spawn(async move {
@@ -478,8 +478,8 @@ async fn test_custom_prologue_agreement_and_mismatch() -> Result<()> {
     tokio::time::sleep(tokio::time::Duration::from_millis(60)).await;
 
     // 1. Client with matching custom prologue -> Handshake succeeds
-    let client_matching = TunnelClient::new(server_keypair.public_key, server_addr)
-        .with_prologue(custom_prologue);
+    let client_matching =
+        TunnelClient::new(server_keypair.public_key, server_addr).with_prologue(custom_prologue);
     assert_eq!(client_matching.prologue(), custom_prologue);
 
     let res = client_matching
@@ -608,8 +608,8 @@ async fn test_with_prologue_str_builder() -> Result<()> {
 
     let prologue_str = "Noise_String_Prologue_v1";
 
-    let server = TunnelServer::new(server_keypair.clone(), server_addr)
-        .with_prologue_str(prologue_str);
+    let server =
+        TunnelServer::new(server_keypair.clone(), server_addr).with_prologue_str(prologue_str);
     assert_eq!(server.prologue(), prologue_str.as_bytes());
 
     tokio::spawn(async move {
@@ -618,8 +618,8 @@ async fn test_with_prologue_str_builder() -> Result<()> {
 
     tokio::time::sleep(tokio::time::Duration::from_millis(60)).await;
 
-    let client = TunnelClient::new(server_keypair.public_key, server_addr)
-        .with_prologue_str(prologue_str);
+    let client =
+        TunnelClient::new(server_keypair.public_key, server_addr).with_prologue_str(prologue_str);
     assert_eq!(client.prologue(), prologue_str.as_bytes());
 
     let resp = client

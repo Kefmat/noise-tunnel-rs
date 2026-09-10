@@ -110,9 +110,13 @@ impl TunnelServer {
                     counter.fetch_add(1, Ordering::Relaxed);
 
                     tokio::spawn(async move {
-                        let res =
-                            Self::handle_client_with_prologue(socket, server_keys, peer_addr, &prologue)
-                                .await;
+                        let res = Self::handle_client_with_prologue(
+                            socket,
+                            server_keys,
+                            peer_addr,
+                            &prologue,
+                        )
+                        .await;
                         counter.fetch_sub(1, Ordering::Relaxed);
                         if let Err(e) = res {
                             warn!("Feil eller sesjonsavbrudd for {}: {:?}", peer_addr, e);
@@ -161,12 +165,7 @@ impl TunnelServer {
 
         // 2. Beregn statisk Diffie-Hellman: DH(e_c, s_s)
         let dh_static = diffie_hellman(&server_keys.private_key, &client_ephemeral);
-        let h1 = hash_handshake_state(
-            prologue,
-            &client_ephemeral,
-            &server_keys.public_key,
-            None,
-        );
+        let h1 = hash_handshake_state(prologue, &client_ephemeral, &server_keys.public_key, None);
 
         // Verifiser init MAC
         let (k_init_c, _) = derive_session_keys(&dh_static, &h1)?;
