@@ -132,6 +132,11 @@ impl WireFrame {
         self.payload.is_empty()
     }
 
+    /// Returnerer referanse til rammens nyttelast (slice uten allokering).
+    pub fn payload_slice(&self) -> &[u8] {
+        &self.payload
+    }
+
     /// Returnerer de 9 byte-headerne til rammen ([1 byte type] + [8 bytes nonce]).
     pub fn header_bytes(&self) -> [u8; 9] {
         let mut header = [0u8; 9];
@@ -383,6 +388,16 @@ impl ReplayFilter {
     }
 }
 
+impl std::fmt::Display for ReplayFilter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "ReplayFilter(window={}, last_seq={}, accepted={}/{}, rejected={})",
+            self.window_size, self.last_seq, self.total_accepted, self.total_seen, self.total_rejected
+        )
+    }
+}
+
 /// Hjelpefunksjon for å generere handshake-hash (transcript hash) for integrert sesjonsbinding.
 pub fn hash_handshake_state(
     prologue: &[u8],
@@ -613,5 +628,20 @@ mod tests {
         frame2.serialize_into(&mut buffer);
         let parsed2 = WireFrame::from_bytes(&buffer).unwrap();
         assert_eq!(parsed2, frame2);
+    }
+
+    #[test]
+    fn test_wireframe_payload_slice_and_replay_filter_display() {
+        let payload = b"slice test payload".to_vec();
+        let frame = WireFrame::data(42, payload.clone());
+        assert_eq!(frame.payload_slice(), payload.as_slice());
+
+        let mut filter = ReplayFilter::with_window_size(64);
+        filter.validate_and_record(10).unwrap();
+        let display_str = format!("{}", filter);
+        assert!(display_str.contains("window=64"));
+        assert!(display_str.contains("last_seq=10"));
+        assert!(display_str.contains("accepted=1/1"));
+        assert!(display_str.contains("rejected=0"));
     }
 }
