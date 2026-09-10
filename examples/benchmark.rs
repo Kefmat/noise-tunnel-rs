@@ -85,9 +85,22 @@ fn main() {
     }
     let elapsed = start.elapsed();
     let frame_per_sec = (frame_iterations as f64) / elapsed.as_secs_f64();
-    println!(" [Wire Framing Serialisering]");
+    println!(" [Wire Framing Serialisering (Allokerende serialize)]");
     println!("   Iterasjoner : {}", frame_iterations);
     println!("   Hastighet   : {:.2} rammer/sek\n", frame_per_sec);
+
+    // 6. Wire Framing Serialization with Buffer Reuse (serialize_into)
+    let mut reused_buffer = Vec::with_capacity(16 * 1024 + 16);
+    let start = Instant::now();
+    for _ in 0..frame_iterations {
+        reused_buffer.clear();
+        frame.serialize_into(&mut reused_buffer);
+    }
+    let elapsed = start.elapsed();
+    let reuse_per_sec = (frame_iterations as f64) / elapsed.as_secs_f64();
+    println!(" [Wire Framing Serialisering (Gjenbruk serialize_into)]");
+    println!("   Iterasjoner : {}", frame_iterations);
+    println!("   Hastighet   : {:.2} rammer/sek\n", reuse_per_sec);
 
     println!("========================================================\n");
 }

@@ -133,29 +133,32 @@ async fn main() -> anyhow::Result<()> {
 
     // 2. Start server med tilpasset prologue og forbindelsesgrense
     let server = TunnelServer::new(server_keypair.clone(), server_addr)
-        .with_prologue(b"MyEnterpriseApp_v1")
+        .with_prologue_str("MyEnterpriseApp_v1")
         .with_max_connections(100);
 
     // 3. Konfigurer klient med matchende prologue og timeout
     let client = TunnelClient::new(server_keypair.public_key, server_addr)
-        .with_prologue(b"MyEnterpriseApp_v1")
+        .with_prologue_str("MyEnterpriseApp_v1")
         .with_timeout(Duration::from_secs(5));
 
     // 4. Send kryptert melding
     // let response = client.send_secure_message("Hemmelig hilsen").await?;
 
-    // 5. Zero-I/O / Binær ramme-parsing og buffer-gjenbruk
+    // 5. Zero-I/O / Binær ramme-parsing, payload_slice og buffer-gjenbruk
     let frame = WireFrame::data(0, b"Kryptert innhold".to_vec());
+    assert_eq!(frame.payload_slice(), b"Kryptert innhold");
+
     let mut buffer = Vec::new();
     frame.serialize_into(&mut buffer);
 
     let parsed_frame = WireFrame::from_bytes(&buffer)?;
     assert_eq!(parsed_frame, frame);
 
-    // 6. Anti-replay filter med sanntidsmetrikker
+    // 6. Anti-replay filter med Display og sanntidsmetrikker
     let mut replay_filter = ReplayFilter::new();
     replay_filter.validate_and_record(0)?;
     assert_eq!(replay_filter.total_accepted(), 1);
+    println!("Filterstatus: {}", replay_filter);
 
     Ok(())
 }
@@ -176,6 +179,7 @@ Typiske ytelsesresultater på moderne maskinvare:
 - **X25519 Diffie-Hellman**: ~58 000 nøkkelutvekslinger / sek
 - **HKDF-SHA256**: ~1.4 millioner sesjonsavledninger / sek
 - **Anti-Replay Window Filter**: ~40+ millioner pakkevalideringer / sek
+- **Wire Framing Serialisering (Buffer-gjenbruk)**: Null ny-allokering med `serialize_into`
 
 ---
 
