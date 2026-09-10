@@ -44,6 +44,11 @@ impl TunnelServer {
         self
     }
 
+    /// Konfigurerer en tilpasset protokoll-prologue fra en streng-slice (&str).
+    pub fn with_prologue_str(self, prologue: &str) -> Self {
+        self.with_prologue(prologue.as_bytes())
+    }
+
     /// Returnerer eventuell konfigurert grense for samtidige forbindelser.
     pub fn max_connections(&self) -> Option<usize> {
         self.max_connections

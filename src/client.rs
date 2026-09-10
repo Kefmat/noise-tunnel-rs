@@ -38,6 +38,11 @@ impl TunnelClient {
         self
     }
 
+    /// Konfigurerer en tilpasset protokoll-prologue fra en streng-slice (&str).
+    pub fn with_prologue_str(self, prologue: &str) -> Self {
+        self.with_prologue(prologue.as_bytes())
+    }
+
     /// Returnerer eventuell konfigurert nettverkstimeout.
     pub fn timeout(&self) -> Option<std::time::Duration> {
         self.timeout

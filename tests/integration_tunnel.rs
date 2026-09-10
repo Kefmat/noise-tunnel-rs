@@ -598,3 +598,34 @@ async fn test_full_duplex_session_with_serialize_into_and_replay_stats() -> Resu
 
     Ok(())
 }
+
+#[tokio::test]
+async fn test_with_prologue_str_builder() -> Result<()> {
+    let server_keypair = KeyPair::generate();
+    let listener = TcpListener::bind("127.0.0.1:0").await?;
+    let server_addr = listener.local_addr()?;
+    drop(listener);
+
+    let prologue_str = "Noise_String_Prologue_v1";
+
+    let server = TunnelServer::new(server_keypair.clone(), server_addr)
+        .with_prologue_str(prologue_str);
+    assert_eq!(server.prologue(), prologue_str.as_bytes());
+
+    tokio::spawn(async move {
+        let _ = server.run().await;
+    });
+
+    tokio::time::sleep(tokio::time::Duration::from_millis(60)).await;
+
+    let client = TunnelClient::new(server_keypair.public_key, server_addr)
+        .with_prologue_str(prologue_str);
+    assert_eq!(client.prologue(), prologue_str.as_bytes());
+
+    let resp = client
+        .send_secure_message("Tester with_prologue_str builder")
+        .await?;
+    assert!(resp.contains("Tester with_prologue_str builder"));
+
+    Ok(())
+}
