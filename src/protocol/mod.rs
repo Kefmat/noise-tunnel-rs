@@ -38,6 +38,36 @@ impl std::fmt::Display for MessageType {
     }
 }
 
+impl MessageType {
+    /// Returnerer den underliggende byte-verdien til meldingstypen.
+    pub fn as_u8(&self) -> u8 {
+        *self as u8
+    }
+
+    /// Sjekker om meldingstypen representerer en handshake-fase.
+    pub fn is_handshake(&self) -> bool {
+        matches!(
+            self,
+            MessageType::HandshakeInit | MessageType::HandshakeResp
+        )
+    }
+
+    /// Sjekker om meldingstypen er kryptert brukerdata.
+    pub fn is_data(&self) -> bool {
+        *self == MessageType::DataPayload
+    }
+
+    /// Sjekker om meldingstypen er et heartbeat / ping-pong signal.
+    pub fn is_heartbeat(&self) -> bool {
+        *self == MessageType::Heartbeat
+    }
+
+    /// Sjekker om meldingstypen er et avslutningssignal (Close).
+    pub fn is_close(&self) -> bool {
+        *self == MessageType::Close
+    }
+}
+
 impl TryFrom<u8> for MessageType {
     type Error = anyhow::Error;
 
@@ -101,25 +131,22 @@ impl WireFrame {
 
     /// Sjekker om rammen representerer en handshake-pakke.
     pub fn is_handshake(&self) -> bool {
-        matches!(
-            self.msg_type,
-            MessageType::HandshakeInit | MessageType::HandshakeResp
-        )
+        self.msg_type.is_handshake()
     }
 
     /// Sjekker om rammen er et heartbeat.
     pub fn is_heartbeat(&self) -> bool {
-        self.msg_type == MessageType::Heartbeat
+        self.msg_type.is_heartbeat()
     }
 
     /// Sjekker om rammen inneholder kryptert datainnhold.
     pub fn is_data(&self) -> bool {
-        self.msg_type == MessageType::DataPayload
+        self.msg_type.is_data()
     }
 
     /// Sjekker om rammen er en avslutningsmelding.
     pub fn is_close(&self) -> bool {
-        self.msg_type == MessageType::Close
+        self.msg_type.is_close()
     }
 
     /// Returnerer lengden på rammens nyttelast i bytes.
@@ -647,5 +674,32 @@ mod tests {
         assert!(display_str.contains("last_seq=10"));
         assert!(display_str.contains("accepted=1/1"));
         assert!(display_str.contains("rejected=0"));
+    }
+
+    #[test]
+    fn test_message_type_predicates_and_byte_conversion() {
+        let init = MessageType::HandshakeInit;
+        assert_eq!(init.as_u8(), 0x01);
+        assert!(init.is_handshake());
+        assert!(!init.is_data());
+        assert!(!init.is_heartbeat());
+        assert!(!init.is_close());
+
+        let resp = MessageType::HandshakeResp;
+        assert_eq!(resp.as_u8(), 0x02);
+        assert!(resp.is_handshake());
+
+        let data = MessageType::DataPayload;
+        assert_eq!(data.as_u8(), 0x03);
+        assert!(data.is_data());
+        assert!(!data.is_handshake());
+
+        let hb = MessageType::Heartbeat;
+        assert_eq!(hb.as_u8(), 0x04);
+        assert!(hb.is_heartbeat());
+
+        let close = MessageType::Close;
+        assert_eq!(close.as_u8(), 0x05);
+        assert!(close.is_close());
     }
 }
