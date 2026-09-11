@@ -80,6 +80,20 @@ impl KeyPair {
         Ok(Self::from_private_bytes(arr))
     }
 
+    /// Oppretter et nøkkelpar fra en byte-slice med validering av 32-byte lengde.
+    pub fn from_private_slice(slice: &[u8]) -> Result<Self> {
+        if slice.len() != KEY_LEN {
+            return Err(anyhow!(
+                "Privat nøkkel må være nøyaktig {} bytes, mottok {}",
+                KEY_LEN,
+                slice.len()
+            ));
+        }
+        let mut arr = [0u8; KEY_LEN];
+        arr.copy_from_slice(slice);
+        Ok(Self::from_private_bytes(arr))
+    }
+
     /// Parser en offentlig nøkkel fra hex-format til en 32-byte array.
     pub fn parse_public_key_hex(hex_str: &str) -> Result<[u8; KEY_LEN]> {
         let bytes = hex::decode(hex_str.trim())
@@ -104,6 +118,16 @@ impl KeyPair {
 
     /// Returnerer referanse til den private nøkkelen.
     pub fn private_key(&self) -> &[u8; KEY_LEN] {
+        &self.private_key
+    }
+
+    /// Returnerer referanse til den offentlige nøkkelen som slice.
+    pub fn public_slice(&self) -> &[u8] {
+        &self.public_key
+    }
+
+    /// Returnerer referanse til den private nøkkelen som slice.
+    pub fn private_slice(&self) -> &[u8] {
         &self.private_key
     }
 
@@ -548,5 +572,20 @@ mod tests {
         assert!(debug_str.contains("CipherState"));
         assert!(debug_str.contains("[REDACTED]"));
         assert!(debug_str.contains("nonce: 0"));
+    }
+
+    #[test]
+    fn test_keypair_from_slice_and_slice_accessors() {
+        let keypair = KeyPair::generate();
+        let from_slice = KeyPair::from_private_slice(&keypair.private_key).unwrap();
+        assert_eq!(from_slice.public_key, keypair.public_key);
+        assert_eq!(from_slice.private_key, keypair.private_key);
+
+        assert_eq!(keypair.public_slice(), &keypair.public_key[..]);
+        assert_eq!(keypair.private_slice(), &keypair.private_key[..]);
+
+        // Ugyldig slice lengde
+        assert!(KeyPair::from_private_slice(&[0u8; 16]).is_err());
+        assert!(KeyPair::from_private_slice(&[0u8; 64]).is_err());
     }
 }
