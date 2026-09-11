@@ -48,6 +48,11 @@ impl TunnelClient {
         self.timeout
     }
 
+    /// Sjekker om klienten har en konfigurert nettverkstimeout.
+    pub fn has_timeout(&self) -> bool {
+        self.timeout.is_some()
+    }
+
     /// Returnerer gjeldende protokoll-prologue.
     pub fn prologue(&self) -> &[u8] {
         &self.prologue

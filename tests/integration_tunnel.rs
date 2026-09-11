@@ -629,3 +629,26 @@ async fn test_with_prologue_str_builder() -> Result<()> {
 
     Ok(())
 }
+
+#[tokio::test]
+async fn test_capacity_and_timeout_query_helpers() -> Result<()> {
+    let keypair = KeyPair::generate();
+    let addr: std::net::SocketAddr = "127.0.0.1:7777".parse()?;
+
+    // Server queries
+    let server_unlimited = TunnelServer::new(keypair.clone(), addr);
+    assert!(!server_unlimited.has_active_connections());
+    assert!(!server_unlimited.is_at_capacity());
+
+    let server_limited = TunnelServer::new(keypair.clone(), addr).with_max_connections(0);
+    assert!(server_limited.is_at_capacity());
+
+    // Client queries
+    let client_no_timeout = TunnelClient::new(keypair.public_key, addr);
+    assert!(!client_no_timeout.has_timeout());
+
+    let client_with_timeout = client_no_timeout.with_timeout(std::time::Duration::from_secs(2));
+    assert!(client_with_timeout.has_timeout());
+
+    Ok(())
+}

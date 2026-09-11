@@ -64,6 +64,19 @@ impl TunnelServer {
         self.active_connections.load(Ordering::Relaxed)
     }
 
+    /// Sjekker om det finnes minst én aktiv klientforbindelse.
+    pub fn has_active_connections(&self) -> bool {
+        self.active_connections() > 0
+    }
+
+    /// Sjekker om serveren har nådd maksimalt antall tillatte samtidige forbindelser.
+    pub fn is_at_capacity(&self) -> bool {
+        match self.max_connections {
+            Some(max) => self.active_connections() >= max,
+            None => false,
+        }
+    }
+
     /// Returnerer serverens lytteadresse.
     pub fn bind_addr(&self) -> SocketAddr {
         self.bind_addr
