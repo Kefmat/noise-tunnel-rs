@@ -127,25 +127,30 @@ use std::time::Duration;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // 1. Generer nøkkelpar
+    // 1. Generer eller last nøkkelpar
     let server_keypair = KeyPair::generate();
+    let _restored_keypair = KeyPair::from_private_slice(server_keypair.private_slice())?;
     let server_addr = "127.0.0.1:8080".parse()?;
 
     // 2. Start server med tilpasset prologue og forbindelsesgrense
     let server = TunnelServer::new(server_keypair.clone(), server_addr)
         .with_prologue_str("MyEnterpriseApp_v1")
         .with_max_connections(100);
+    assert!(!server.has_active_connections());
+    assert!(!server.is_at_capacity());
 
     // 3. Konfigurer klient med matchende prologue og timeout
     let client = TunnelClient::new(server_keypair.public_key, server_addr)
         .with_prologue_str("MyEnterpriseApp_v1")
         .with_timeout(Duration::from_secs(5));
+    assert!(client.has_timeout());
 
     // 4. Send kryptert melding
     // let response = client.send_secure_message("Hemmelig hilsen").await?;
 
     // 5. Zero-I/O / Binær ramme-parsing, payload_slice og buffer-gjenbruk
     let frame = WireFrame::data(0, b"Kryptert innhold".to_vec());
+    assert!(frame.is_data());
     assert_eq!(frame.payload_slice(), b"Kryptert innhold");
 
     let mut buffer = Vec::new();
