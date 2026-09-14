@@ -159,6 +159,16 @@ impl WireFrame {
         self.payload.is_empty()
     }
 
+    /// Returnerer rammens meldingstype.
+    pub fn msg_type(&self) -> MessageType {
+        self.msg_type
+    }
+
+    /// Returnerer rammens sekvensnummer/nonce.
+    pub fn nonce(&self) -> u64 {
+        self.nonce
+    }
+
     /// Returnerer referanse til rammens nyttelast (slice uten allokering).
     pub fn payload_slice(&self) -> &[u8] {
         &self.payload
@@ -379,9 +389,30 @@ impl ReplayFilter {
         self.last_seq
     }
 
-    /// Returnerer konfigurert glidevindu-størrelse.
+    /// Returnerer konfigurert glidevindu-størrelse / kapasitet.
     pub fn window_size(&self) -> u64 {
         self.window_size
+    }
+
+    /// Alias for vindusstørrelse.
+    pub fn capacity(&self) -> u64 {
+        self.window_size
+    }
+
+    /// Sjekker om sekvensnummeret allerede er registrert eller utenfor vinduet uten å modifisere tilstanden.
+    pub fn has_seen(&self, seq: u64) -> bool {
+        if !self.initialized {
+            return false;
+        }
+        if seq > self.last_seq {
+            return false;
+        }
+        let diff = self.last_seq - seq;
+        if diff >= self.window_size {
+            return true; // Utenfor vindu (for gammelt)
+        }
+        let bit = 1u128 << diff;
+        (self.bitmap & bit) != 0
     }
 
     /// Sjekker om filteret har mottatt sin første sekvens.
@@ -701,5 +732,24 @@ mod tests {
         let close = MessageType::Close;
         assert_eq!(close.as_u8(), 0x05);
         assert!(close.is_close());
+    }
+
+    #[test]
+    fn test_wireframe_accessors_and_replay_filter_has_seen() {
+        let frame = WireFrame::data(77, b"payload".to_vec());
+        assert_eq!(frame.nonce(), 77);
+        assert_eq!(frame.msg_type(), MessageType::DataPayload);
+
+        let mut filter = ReplayFilter::with_window_size(64);
+        assert_eq!(filter.capacity(), 64);
+        assert!(!filter.has_seen(10));
+
+        filter.validate_and_record(10).unwrap();
+        assert!(filter.has_seen(10));
+        assert!(!filter.has_seen(11));
+
+        filter.validate_and_record(100).unwrap();
+        // 10 er nå utenfor vinduet [37..100]
+        assert!(filter.has_seen(10));
     }
 }
