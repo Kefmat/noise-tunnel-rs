@@ -111,96 +111,119 @@ Sørg for at du har Rust installert (krever Rust 1.75+):
 
 ```bash
 # Klon repoet og bygg release-binæren
+git clone https://github.com/Kefmat/noise-tunnel-rs.git
+cd noise-tunnel-rs
 cargo build --release
 ```
+
+Binærfilen vil befinne seg i `target/release/noise-tunnel-rs`.
 
 ---
 
 ## Brukerveiledning (CLI)
 
-### 1. Generer nøkkelpar for server
+CLI-et støtter både full serverdrift, klientsending, nøkkelgenerering og integrert sikkerhetsverifikasjon.
+
+### 1. Generer kryptografiske X25519 nøkkelpar
 ```bash
 cargo run -- keygen
 ```
-Dette returnerer en privat nøkkel (som serveren må holde hemmelig) og en offentlig nøkkel (som deles med klienter).
+Genererer et sikkert X25519 nøkkelpar fra operativsystemets CSPRNG (`OsRng`):
+- **Privat nøkkel**: Må holdes strengt hemmelig (brukes av serveren).
+- **Offentlig nøkkel**: Kan deles fritt med klienter for å verifisere serverens identitet.
 
-### 2. Start serveren
+### 2. Start den sikre tunnel-serveren
 ```bash
-# Start server på port 8080 med serverens private nøkkel
+# Start server på standardport (127.0.0.1:8080) med spesifisert privatnøkkel
 cargo run -- server --bind 127.0.0.1:8080 --private-key <SERVER_PRIVKEY_HEX>
+
+# Eller la serveren generere et midlertidig nøkkelpar ved oppstart:
+cargo run -- server --bind 0.0.0.0:8080
 ```
 
-### 3. Koble til med klienten (Enkeltmelding)
+### 3. Send en sikker enkeltmelding (Klient)
 ```bash
-# Koble til serveren og send én melding
-cargo run -- client --connect 127.0.0.1:8080 --server-pubkey <SERVER_PUBKEY_HEX> --message "Hemmelig melding over kryptert tunnel!"
+cargo run -- client \
+  --connect 127.0.0.1:8080 \
+  --server-pubkey <SERVER_PUBKEY_HEX> \
+  --message "Hemmelig payload over Noise E2EE tunnel!"
 ```
 
-### 4. Interaktiv E2EE Sesjon (Live REPL & Streaming)
+### 4. Start interaktiv E2EE-sesjon (Live REPL)
 ```bash
-# Start interaktiv modus med live chat og heartbeat-støtte
-cargo run -- client --connect 127.0.0.1:8080 --server-pubkey <SERVER_PUBKEY_HEX> --interactive
+cargo run -- client \
+  --connect 127.0.0.1:8080 \
+  --server-pubkey <SERVER_PUBKEY_HEX> \
+  --interactive
 ```
-I interaktiv modus:
-- Skriv `/ping` for å sende kryptert heartbeat.
-- Skriv tekster for å sende kryptert data frem og tilbake.
-- Skriv `/quit` eller `exit` for å lukke sesjonen trygt.
+I interaktiv modus kan du sende kryptert trafikk i sanntid:
+- `/ping` – Sender et kryptert heartbeat og mottar bekreftet `PONG` fra server.
+- `<tekst>` – Sender ende-til-ende-kryptert melding og mottar ekko-svar.
+- `/quit` eller `exit` – Sender et autentisert `Close`-rammesignal og avslutter sesjonen trygt.
 
-### 5. Kjør integrerte krypto- og sårbarhetstester
+### 5. Kjør automatisert sikkerhetsverifikasjon
 ```bash
-# Verifiser handshake, manipuleringsforsvar (MAC failure) og replay-angrep
 cargo run -- verify
 ```
+Gjennomfører sanntids sikkerhetstester mot live loopback-instans for å verifisere:
+1. Full 1-RTT Handshake & AEAD datatransport.
+2. Integritetssjekk og avvisning av manipulerte pakker (MitM Tamper detection).
+3. Anti-Replay blokkering av oppfangede duplikate pakker.
+4. Monoton nonce-isolasjon og overflow-beskyttelse.
 
 ---
 
-## Bibliotek-API og Eksempelbruk (Rust API)
+## Bibliotek-API og Eksempelbruk (Rust SDK)
 
-`noise-tunnel-rs` kan benyttes som et modulært bibliotek i andre prosjekter:
+`noise-tunnel-rs` er designet som et modulært, høynivå Rust-bibliotek:
 
 ```rust
-use noise_tunnel_rs::{TunnelClient, TunnelServer, KeyPair, SessionKeys, WireFrame, ReplayFilter};
+use anyhow::Result;
+use noise_tunnel_rs::{
+    KeyPair, MessageType, ReplayFilter, SessionKeys, TunnelClient, TunnelServer, WireFrame,
+};
 use std::time::Duration;
 
 #[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    // 1. Generer eller last nøkkelpar
+async fn main() -> Result<()> {
+    // 1. Generer eller last inn et X25519 nøkkelpar
     let server_keypair = KeyPair::generate();
-    let _restored_keypair = KeyPair::from_private_slice(server_keypair.private_slice())?;
+    let _restored = KeyPair::from_private_slice(server_keypair.private_slice())?;
     let server_addr = "127.0.0.1:8080".parse()?;
 
-    // 2. Start server med tilpasset prologue og forbindelsesgrense
+    // 2. Initialiser server med tilpasset domene-prologue og forbindelsesgrense
     let server = TunnelServer::new(server_keypair.clone(), server_addr)
         .with_prologue_str("MyEnterpriseApp_v1")
         .with_max_connections(100);
     assert!(!server.has_active_connections());
     assert!(!server.is_at_capacity());
 
-    // 3. Konfigurer klient med matchende prologue og timeout
+    // 3. Konfigurer klient med matchende prologue og nettverkstimeout
     let client = TunnelClient::new(server_keypair.public_key, server_addr)
         .with_prologue_str("MyEnterpriseApp_v1")
         .with_timeout(Duration::from_secs(5));
     assert!(client.has_timeout());
 
-    // 4. Send kryptert melding
+    // 4. Send en kryptert melding (hvis serveren lytter)
     // let response = client.send_secure_message("Hemmelig hilsen").await?;
 
-    // 5. Zero-I/O / Binær ramme-parsing, payload_slice og buffer-gjenbruk
+    // 5. Zero-I/O / Binær ramme-serialisering med buffer-gjenbruk
     let frame = WireFrame::data(0, b"Kryptert innhold".to_vec());
     assert!(frame.is_data());
     assert_eq!(frame.payload_slice(), b"Kryptert innhold");
 
-    let mut buffer = Vec::new();
-    frame.serialize_into(&mut buffer);
+    let mut write_buffer = Vec::with_capacity(128);
+    frame.serialize_into(&mut write_buffer);
 
-    let parsed_frame = WireFrame::from_bytes(&buffer)?;
+    let parsed_frame = WireFrame::from_bytes(&write_buffer)?;
     assert_eq!(parsed_frame, frame);
 
-    // 6. Anti-replay filter med Display og sanntidsmetrikker
-    let mut replay_filter = ReplayFilter::new();
-    replay_filter.validate_and_record(0)?;
+    // 6. Anti-replay glidevindu med sanntids-metrikker
+    let mut replay_filter = ReplayFilter::with_window_size(128);
+    replay_filter.validate_and_record(10)?;
     assert_eq!(replay_filter.total_accepted(), 1);
-    println!("Filterstatus: {}", replay_filter);
+    assert_eq!(replay_filter.total_rejected(), 0);
+    println!("Anti-replay status: {}", replay_filter);
 
     Ok(())
 }
