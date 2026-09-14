@@ -12,13 +12,13 @@
 
 ## Hovedfunksjoner & Egenskaper
 
-- 🛡️ **Noise_NK 1-RTT Handshake**: Autentiserer serverens statiske nøkkel umiddelbart og forhandler sesjonsnøkler med *Perfect Forward Secrecy (PFS)*.
-- ⚡ **Høy Gjennomstrømming (Multi-GB/s)**: ChaCha20-Poly1305 AEAD gir lynrask kryptering og dekryptering på moderne CPU-er.
-- 🔒 **Minnesikkerhet & Zeroization**: Automatisk overskriving av hemmelige nøkler (`StaticSecret`, `EphemeralSecret`, `CipherState`) med `zeroize::ZeroizeOnDrop`.
-- 🪟 **O(1) Anti-Replay Glidevindu**: 128-bit bitmap som detekterer og avviser duplikate eller forsinkede nettverkspakker uten dynamisk minneallokering.
-- 🔄 **Buffer-gjenbruk (Zero-I/O Overhead)**: `WireFrame::serialize_into` og `payload_slice` minimerer minnekopiering under transport.
-- 🏷️ **Tilpasset Prologue-binding**: Støtte for domenespesifikk sesjonsbinding via `with_prologue_str` for å hindre cross-protocol angrep.
-- 💬 **Interaktiv REPL & Enkeltmeldinger**: Fleksibel CLI med støtte for enkeltmeldinger, live interaktiv streaming, kryptert `/ping`-heartbeat og `/quit`.
+- **Noise_NK 1-RTT Handshake**: Autentiserer serverens statiske nøkkel umiddelbart og forhandler sesjonsnøkler med *Perfect Forward Secrecy (PFS)*.
+- **Høy Gjennomstrømming (Multi-GB/s)**: ChaCha20-Poly1305 AEAD gir lynrask kryptering og dekryptering på moderne CPU-er.
+- **Minnesikkerhet & Zeroization**: Automatisk overskriving av hemmelige nøkler (`StaticSecret`, `EphemeralSecret`, `CipherState`) med `zeroize::ZeroizeOnDrop`.
+- **O(1) Anti-Replay Glidevindu**: 128-bit bitmap som detekterer og avviser duplikate eller forsinkede nettverkspakker uten dynamisk minneallokering.
+- **Buffer-gjenbruk (Zero-I/O Overhead)**: `WireFrame::serialize_into` og `payload_slice` minimerer minnekopiering under transport.
+- **Tilpasset Prologue-binding**: Støtte for domenespesifikk sesjonsbinding via `with_prologue_str` for å hindre cross-protocol angrep.
+- **Interaktiv REPL & Enkeltmeldinger**: Fleksibel CLI med støtte for enkeltmeldinger, live interaktiv streaming, kryptert `/ping`-heartbeat og `/quit`.
 
 ---
 
