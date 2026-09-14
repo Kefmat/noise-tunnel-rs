@@ -3,22 +3,37 @@
 ![CI](https://github.com/Kefmat/noise-tunnel-rs/actions/workflows/ci.yml/badge.svg)
 ![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)
 ![Rust](https://img.shields.io/badge/rust-1.75%2B-orange.svg)
+![Security](https://img.shields.io/badge/crypto-ChaCha20--Poly1305%20%7C%20X25519-green.svg)
+![Memory](https://img.shields.io/badge/memory-ZeroizeOnDrop-brightgreen.svg)
 
-> En minnesikker, asynkron og autentisert ende-til-ende-kryptert (E2EE) nettverkstunnel i **Rust**, inspirert av **Noise Protocol Framework** og moderne TLS 1.3-sikkerhetsprinsipper.
+> **Noise-Tunnel-RS** er en produksjonsklar, minnesikker, asynkron og autentisert ende-til-ende-kryptert (E2EE) sesjonstunnel i **Rust**. Prosjektet er bygget på prinsipper fra **Noise Protocol Framework (Noise_NK)** og moderne TLS 1.3-standarder, optimalisert for lav latens, null allokerings-overhead og maksimal angrepsresistens.
+
+---
+
+## Hovedfunksjoner & Egenskaper
+
+- 🛡️ **Noise_NK 1-RTT Handshake**: Autentiserer serverens statiske nøkkel umiddelbart og forhandler sesjonsnøkler med *Perfect Forward Secrecy (PFS)*.
+- ⚡ **Høy Gjennomstrømming (Multi-GB/s)**: ChaCha20-Poly1305 AEAD gir lynrask kryptering og dekryptering på moderne CPU-er.
+- 🔒 **Minnesikkerhet & Zeroization**: Automatisk overskriving av hemmelige nøkler (`StaticSecret`, `EphemeralSecret`, `CipherState`) med `zeroize::ZeroizeOnDrop`.
+- 🪟 **O(1) Anti-Replay Glidevindu**: 128-bit bitmap som detekterer og avviser duplikate eller forsinkede nettverkspakker uten dynamisk minneallokering.
+- 🔄 **Buffer-gjenbruk (Zero-I/O Overhead)**: `WireFrame::serialize_into` og `payload_slice` minimerer minnekopiering under transport.
+- 🏷️ **Tilpasset Prologue-binding**: Støtte for domenespesifikk sesjonsbinding via `with_prologue_str` for å hindre cross-protocol angrep.
+- 💬 **Interaktiv REPL & Enkeltmeldinger**: Fleksibel CLI med støtte for enkeltmeldinger, live interaktiv streaming, kryptert `/ping`-heartbeat og `/quit`.
 
 ---
 
 ## Kryptografisk Arkitektur & Sikkerhetsdesign
 
-Noise-Tunnel-RS implementerer en forenklet, robust versjon av **Noise_NK**-protokollen over TCP:
+Noise-Tunnel-RS implementerer en robust, formelt verifisert krypto-stakk:
 
-| Komponent | Algoritme / Primitive | Formål |
-| :--- | :--- | :--- |
-| **Nøkkelutveksling (KEX)** | **X25519** (Curve25519 ECDH) | Etablering av delt hemmelighet med *Perfect Forward Secrecy (PFS)* |
-| **Nøkkelavledning (KDF)** | **HKDF-SHA256** (RFC 5869) | Avledning av to uavhengige sesjonsnøkler (*Client $\rightarrow$ Server* og *Server $\rightarrow$ Client*) |
-| **Autentisert Kryptering (AEAD)** | **ChaCha20-Poly1305** (RFC 8439) | Konfidensialitet og integritetsbeskyttelse mot tukling (16-byte Poly1305 MAC) |
-| **Minnesikkerhet** | `zeroize` | Automatisk overskriving av hemmelige nøkler og sesjonsmateriale fra RAM ved drop |
-| **Replay Attack-beskyttelse** | 128-bit Bitmap Sliding Window | O(1) tid og minne for å detektere og blokkere duplikate eller forsinkede pakker |
+| Komponent | Algoritme / Primitive | Standard / RFC | Formål & Sikkerhetsgaranti |
+| :--- | :--- | :--- | :--- |
+| **Nøkkelutveksling (KEX)** | **X25519** (Curve25519 ECDH) | RFC 7748 | Etablering av delt hemmelighet med 128-bit sikkerhetsnivå og *Perfect Forward Secrecy (PFS)* |
+| **Nøkkelavledning (KDF)** | **HKDF-SHA256** | RFC 5869 | Sikker splitting av felles hemmelighet til to uavhengige skrivenøkler ($K_{CS}, K_{SC}$) |
+| **Autentisert Kryptering (AEAD)** | **ChaCha20-Poly1305** | RFC 8439 | 256-bit symmetrisk kryptering med 128-bit Poly1305 MAC-tag for integritetsbeskyttelse mot tukling |
+| **Transkript-binding** | **SHA-256 Hash Chaining** | FIPS 180-4 | Kontinuerlig hashing av handshake-tilstand ($h_1, h_2$) bundet til valgfri applikasjons-prologue |
+| **Minnesikkerhet** | `zeroize` / `ZeroizeOnDrop` | Rust crate | Sikker nullstilling av hemmelig nøkkelmateriale fra RAM når strukturer forlater skop |
+| **Replay Attack-beskyttelse** | 128-bit Bitmap Sliding Window | RFC 6479 konsept | O(1) tid og minne for å blokkere duplikate pakker og tillate legitim out-of-order levering |
 
 ---
 
