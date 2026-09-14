@@ -26,10 +26,21 @@ impl TunnelClient {
         }
     }
 
+    /// Oppretter en TunnelClient direkte fra en hex-enkodet offentlig nøkkel.
+    pub fn from_hex(server_pubkey_hex: &str, target_addr: SocketAddr) -> Result<Self> {
+        let key = crate::crypto::KeyPair::parse_public_key_hex(server_pubkey_hex)?;
+        Ok(Self::new(key, target_addr))
+    }
+
     /// Konfigurerer en timeout for nettverksoperasjoner og returnerer oppdatert klient (Builder pattern).
     pub fn with_timeout(mut self, timeout: std::time::Duration) -> Self {
         self.timeout = Some(timeout);
         self
+    }
+
+    /// Konfigurerer timeout i millisekunder.
+    pub fn with_timeout_millis(self, millis: u64) -> Self {
+        self.with_timeout(std::time::Duration::from_millis(millis))
     }
 
     /// Konfigurerer en tilpasset protokoll-prologue/identifikator for sesjonsbinding.

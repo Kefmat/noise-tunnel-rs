@@ -652,3 +652,23 @@ async fn test_capacity_and_timeout_query_helpers() -> Result<()> {
 
     Ok(())
 }
+
+#[tokio::test]
+async fn test_client_from_hex_and_timeout_millis() -> Result<()> {
+    let keypair = KeyPair::generate();
+    let addr: std::net::SocketAddr = "127.0.0.1:6543".parse()?;
+
+    let client = TunnelClient::from_hex(&keypair.public_key_hex(), addr)?.with_timeout_millis(1500);
+
+    assert_eq!(client.server_pubkey(), &keypair.public_key);
+    assert_eq!(
+        client.timeout(),
+        Some(std::time::Duration::from_millis(1500))
+    );
+    assert!(client.has_timeout());
+
+    // Ugyldig hex feiler
+    assert!(TunnelClient::from_hex("invalid-hex", addr).is_err());
+
+    Ok(())
+}
