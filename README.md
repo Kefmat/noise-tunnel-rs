@@ -37,22 +37,34 @@ Noise-Tunnel-RS implementerer en robust, formelt verifisert krypto-stakk:
 
 ---
 
-## Protokollflyt (Handshake & Transport)
+## Protokollflyt & Handshake-tilstandsmaskin
+
+Noise-Tunnel-RS kjører en 1-RTT handshake basert på **Noise_NK**-mønsteret:
+- **`N` (No client static key)**: Klienten forblir anonym overfor nettverket under handshake, men bruker efemere nøkler.
+- **`K` (Known server static key)**: Klienten har forhåndskjennskap til serverens offentlige nøkkel ($S_s$) for å hindre Man-in-the-Middle (MitM).
 
 ```text
- Client (Initiator)                                Server (Responder)
-   [Ephemeral e_c]                                   [Static S_s, Ephemeral e_s]
-          │                                                   │
-          │ ─── 1. Handshake Init: e_c.pub, Auth Tag ───────> │  (ECDH: e_c + S_s)
-          │                                                   │
-          │ <── 2. Handshake Resp: e_s.pub, Auth Tag ──────── │  (ECDH: e_c + e_s)
-          │                                                   │
-   [Split Keys derived via HKDF]                     [Split Keys derived via HKDF]
-   (Tx: Key_CS, Rx: Key_SC)                          (Tx: Key_SC, Rx: Key_CS)
-          │                                                   │
-          │ ════════════ 3. Encrypted Data Tunnel ═══════════ │
-          │ ─── Encrypted Frame (Nonce N_1, Tag_1) ─────────> │
-          │ <── Encrypted Frame (Nonce N_2, Tag_2) ────────── │
+ Client (Initiator)                                                Server (Responder)
+   [Ephemeral e_c]                                                   [Static S_s, Ephemeral e_s]
+          │                                                                   │
+          │ ─── 1. HandshakeInit: [e_c.pub (32B)] [Encrypted Auth Tag] ─────> │
+          │        • DH_static = X25519(e_c.priv, S_s.pub)                    │
+          │        • h_1 = SHA256(prologue || e_c.pub || S_s.pub)             │
+          │        • (K_init_c, _) = HKDF(DH_static, salt=h_1)                │
+          │                                                                   │
+          │ <── 2. HandshakeResp: [e_s.pub (32B)] [Encrypted ACK Tag] ─────── │
+          │        • DH_ephem = X25519(e_c.priv, e_s.pub)                     │
+          │        • h_2 = SHA256(prologue || e_c.pub || S_s.pub || e_s.pub)  │
+          │        • (K_resp_s) = HKDF(DH_ephem, salt=h_2)                    │
+          │                                                                   │
+   [Split Transport Keys]                                            [Split Transport Keys]
+   Secret = DH_static || DH_ephem                                    Secret = DH_static || DH_ephem
+   (Key_CS, Key_SC) = HKDF(Secret, salt=h_2)                         (Key_CS, Key_SC) = HKDF(Secret, salt=h_2)
+   Tx: Key_CS, Rx: Key_SC                                            Tx: Key_SC, Rx: Key_CS
+          │                                                                   │
+          │ ═══════════════════ 3. Sikker Datatransport ═════════════════════ │
+          │ ─── Encrypted Data Frame (Nonce=0, Poly1305 Tag) ───────────────> │
+          │ <── Encrypted Data Frame (Nonce=0, Poly1305 Tag) ──────────────── │
 ```
 
 ### Trådramme-format (Binary Wire Frame)
@@ -74,12 +86,22 @@ Alle meldinger over TCP innkapsles i en length-prefixed ramme:
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 ```
 
-| Felt | Størrelse | Beskrivelse |
+| Felt | Type / Størrelse | Beskrivelse |
 | :--- | :--- | :--- |
-| **Length** | 4 bytes (u32-BE) | Total rammelengde ekskludert lengdefeltet (maks 64 KB DoS-grense) |
-| **MessageType** | 1 byte (u8) | `0x01`: HandshakeInit, `0x02`: HandshakeResp, `0x03`: Data, `0x04`: Heartbeat, `0x05`: Close |
-| **Nonce** | 8 bytes (u64-BE) | Monotont økende sekvensnummer per retning for ChaCha20-Poly1305 og anti-replay |
-| **Payload** | N bytes | Kryptert innhold etterfulgt av 16-byte Poly1305 autentiseringstag |
+| **Length** | `u32` (4 bytes, Big-Endian) | Total rammelengde ekskludert de 4 lengdebytene (Maks 64 KB DoS-grense). |
+| **MessageType** | `u8` (1 byte) | Meldingskategori (se tabell under). |
+| **Nonce** | `u64` (8 bytes, Big-Endian) | Monotont økende sekvensnummer for ChaCha20-Poly1305 og glidevinduet. |
+| **Payload** | `[u8; N]` | Kryptert nyttelast etterfulgt av en 16-byte Poly1305 MAC-tag. |
+
+#### Meldings-typer (`MessageType`)
+
+| Type | Hex | Navn | Bruksområde |
+| :---: | :---: | :--- | :--- |
+| `1` | `0x01` | `HandshakeInit` | Klientens første handshake-pakke med $e_c.pub$ og kryptert autentisering. |
+| `2` | `0x02` | `HandshakeResp` | Serverens handshake-svar med $e_s.pub$ og kryptert ACK. |
+| `3` | `0x03` | `DataPayload` | Kryptert applikasjonstrafikk og meldinger i etablert sesjon. |
+| `4` | `0x04` | `Heartbeat` | Toveis liveness-sjekk (`PING` $\rightarrow$ `PONG`) over den krypterte tunnelen. |
+| `5` | `0x05` | `Close` | Ryddig avslutning og destruksjon av sesjonstilstand og nøkler. |
 
 ---
 
