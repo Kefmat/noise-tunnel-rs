@@ -16,7 +16,6 @@ pub const KEY_LEN: usize = 32;
 /// Lengde på ChaCha20-Poly1305 nonce (12 bytes = 96 bits).
 pub const NONCE_LEN: usize = 12;
 /// Lengde på Poly1305 autentiseringstag (16 bytes = 128 bits).
-#[allow(dead_code)]
 pub const TAG_LEN: usize = 16;
 
 /// Statisk hemmelig nøkkelpar for X25519.
@@ -312,6 +311,16 @@ impl SessionKeys {
         &self.server_write_key
     }
 
+    /// Returnerer referanse til klientens skrivenøkkel som byte-slice.
+    pub fn as_client_slice(&self) -> &[u8] {
+        &self.client_write_key
+    }
+
+    /// Returnerer referanse til serverens skrivenøkkel som byte-slice.
+    pub fn as_server_slice(&self) -> &[u8] {
+        &self.server_write_key
+    }
+
     /// Konsumerer instansen og returnerer rå nøkler som en tuppel `(client_key, server_key)`.
     pub fn into_parts(self) -> ([u8; KEY_LEN], [u8; KEY_LEN]) {
         (self.client_write_key, self.server_write_key)
@@ -587,5 +596,16 @@ mod tests {
         // Ugyldig slice lengde
         assert!(KeyPair::from_private_slice(&[0u8; 16]).is_err());
         assert!(KeyPair::from_private_slice(&[0u8; 64]).is_err());
+    }
+
+    #[test]
+    fn test_session_keys_as_slices_and_tag_len() {
+        assert_eq!(TAG_LEN, 16);
+        let c = [0x11u8; KEY_LEN];
+        let s = [0x22u8; KEY_LEN];
+        let keys = SessionKeys::new(c, s);
+
+        assert_eq!(keys.as_client_slice(), &c[..]);
+        assert_eq!(keys.as_server_slice(), &s[..]);
     }
 }
