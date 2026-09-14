@@ -18,6 +18,11 @@ pub mod server;
 pub mod verify;
 
 pub use client::TunnelClient;
-pub use crypto::{KeyPair, SessionKeys};
-pub use protocol::{MessageType, ReplayFilter, WireFrame};
+pub use crypto::{
+    CipherState, EphemeralKeyPair, KeyPair, SessionKeys, KEY_LEN, NONCE_LEN, TAG_LEN,
+};
+pub use protocol::{
+    hash_handshake_state, MessageType, ReplayFilter, WireFrame, MAX_FRAME_SIZE, PROTOCOL_NAME,
+    REPLAY_WINDOW_SIZE,
+};
 pub use server::TunnelServer;

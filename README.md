@@ -186,20 +186,20 @@ use std::time::Duration;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // 1. Generer eller last inn et X25519 nøkkelpar
+    // 1. Generer eller last inn et X25519 nøkkelpar (eller via hex)
     let server_keypair = KeyPair::generate();
     let _restored = KeyPair::from_private_slice(server_keypair.private_slice())?;
     let server_addr = "127.0.0.1:8080".parse()?;
 
-    // 2. Initialiser server med tilpasset domene-prologue og forbindelsesgrense
+    // 2. Initialiser server (eller bruk TunnelServer::from_hex)
     let server = TunnelServer::new(server_keypair.clone(), server_addr)
         .with_prologue_str("MyEnterpriseApp_v1")
         .with_max_connections(100);
     assert!(!server.has_active_connections());
     assert!(!server.is_at_capacity());
 
-    // 3. Konfigurer klient med matchende prologue og nettverkstimeout
-    let client = TunnelClient::new(server_keypair.public_key, server_addr)
+    // 3. Konfigurer klient (eller bruk TunnelClient::from_hex)
+    let client = TunnelClient::from_hex(&server_keypair.public_key_hex(), server_addr)?
         .with_prologue_str("MyEnterpriseApp_v1")
         .with_timeout(Duration::from_secs(5));
     assert!(client.has_timeout());
