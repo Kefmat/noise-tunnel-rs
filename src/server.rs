@@ -32,6 +32,12 @@ impl TunnelServer {
         }
     }
 
+    /// Oppretter en TunnelServer direkte fra en hex-enkodet privat nøkkel.
+    pub fn from_hex(private_key_hex: &str, bind_addr: SocketAddr) -> Result<Self> {
+        let keypair = KeyPair::from_private_hex(private_key_hex)?;
+        Ok(Self::new(keypair, bind_addr))
+    }
+
     /// Setter maksimalt antall samtidige aktive klientforbindelser (Builder pattern).
     pub fn with_max_connections(mut self, max: usize) -> Self {
         self.max_connections = Some(max);

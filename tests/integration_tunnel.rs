@@ -672,3 +672,18 @@ async fn test_client_from_hex_and_timeout_millis() -> Result<()> {
 
     Ok(())
 }
+
+#[tokio::test]
+async fn test_server_from_hex() -> Result<()> {
+    let keypair = KeyPair::generate();
+    let addr: std::net::SocketAddr = "127.0.0.1:6544".parse()?;
+
+    let server = TunnelServer::from_hex(&keypair.private_key_hex(), addr)?;
+    assert_eq!(server.public_key(), &keypair.public_key);
+    assert_eq!(server.public_key_hex(), keypair.public_key_hex());
+
+    // Ugyldig hex feiler
+    assert!(TunnelServer::from_hex("invalid-hex", addr).is_err());
+
+    Ok(())
+}
