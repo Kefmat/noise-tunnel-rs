@@ -64,6 +64,14 @@ enum Commands {
         /// Start interaktiv live sesjon (REPL / strøm over kryptert tunnel)
         #[arg(short, long)]
         interactive: bool,
+
+        /// Valgfri tilpasset protokoll-prologue for sesjonsbinding
+        #[arg(long)]
+        prologue: Option<String>,
+
+        /// Nettverkstimeout i sekunder for operasjonen
+        #[arg(short, long)]
+        timeout: Option<u64>,
     },
 
     /// Kjor automatisk sikkerhets- og sarbarhetsverifikasjon
@@ -133,11 +141,19 @@ async fn main() -> Result<()> {
             server_pubkey,
             message,
             interactive,
+            prologue,
+            timeout,
         } => {
             let server_pubkey_arr = KeyPair::parse_public_key_hex(&server_pubkey)
                 .context("Kunne ikke laste server offentlig nokkel")?;
 
-            let client = TunnelClient::new(server_pubkey_arr, connect);
+            let mut client = TunnelClient::new(server_pubkey_arr, connect);
+            if let Some(p) = prologue {
+                client = client.with_prologue_str(&p);
+            }
+            if let Some(secs) = timeout {
+                client = client.with_timeout(std::time::Duration::from_secs(secs));
+            }
 
             if interactive {
                 client.start_interactive_session().await?;
