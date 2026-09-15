@@ -159,6 +159,16 @@ impl WireFrame {
         self.payload.is_empty()
     }
 
+    /// Returnerer maksimal tillatt nyttelast-størrelse i bytes (ekskludert header).
+    pub fn max_payload_size() -> usize {
+        MAX_FRAME_SIZE.saturating_sub(9)
+    }
+
+    /// Validerer om en gitt nyttelast-størrelse er innenfor grensene til protokollen.
+    pub fn is_valid_payload_size(len: usize) -> bool {
+        len <= Self::max_payload_size()
+    }
+
     /// Returnerer rammens meldingstype.
     pub fn msg_type(&self) -> MessageType {
         self.msg_type
@@ -751,5 +761,15 @@ mod tests {
         filter.validate_and_record(100).unwrap();
         // 10 er nå utenfor vinduet [37..100]
         assert!(filter.has_seen(10));
+    }
+
+    #[test]
+    fn test_wireframe_payload_size_limits() {
+        let max_len = WireFrame::max_payload_size();
+        assert_eq!(max_len, MAX_FRAME_SIZE - 9);
+        assert!(WireFrame::is_valid_payload_size(0));
+        assert!(WireFrame::is_valid_payload_size(1024));
+        assert!(WireFrame::is_valid_payload_size(max_len));
+        assert!(!WireFrame::is_valid_payload_size(max_len + 1));
     }
 }
