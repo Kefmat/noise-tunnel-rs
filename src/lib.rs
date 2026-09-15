@@ -11,12 +11,14 @@
 //! - [`server`]: Multi-klient asynkron tunnel-server med uavhengige sesjoner.
 //! - [`verify`]: Automatiserte krypto- og sårbarhetsverifikasjoner.
 
+pub mod bench;
 pub mod client;
 pub mod crypto;
 pub mod protocol;
 pub mod server;
 pub mod verify;
 
+pub use bench::run_benchmark_suite;
 pub use client::TunnelClient;
 pub use crypto::{
     CipherState, EphemeralKeyPair, KeyPair, SessionKeys, KEY_LEN, NONCE_LEN, TAG_LEN,

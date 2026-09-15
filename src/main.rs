@@ -76,6 +76,9 @@ enum Commands {
 
     /// Kjor automatisk sikkerhets- og sarbarhetsverifikasjon
     Verify,
+
+    /// Kjor ytelses- og throughput-benchmark suite
+    Bench,
 }
 
 #[tokio::main]
@@ -166,6 +169,10 @@ async fn main() -> Result<()> {
 
         Commands::Verify => {
             verify::run_security_verification().await?;
+        }
+
+        Commands::Bench => {
+            noise_tunnel_rs::run_benchmark_suite();
         }
     }
 
