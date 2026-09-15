@@ -37,6 +37,14 @@ enum Commands {
         /// Serverens private nokkel i hex-format (genereres automatisk hvis ikke oppgitt)
         #[arg(short, long)]
         private_key: Option<String>,
+
+        /// Valgfri tilpasset protokoll-prologue for sesjonsbinding
+        #[arg(long)]
+        prologue: Option<String>,
+
+        /// Maksimalt antall samtidige klienttilkoblinger
+        #[arg(short = 'm', long)]
+        max_connections: Option<usize>,
     },
 
     /// Koble til server som klient og send en kryptert melding
@@ -91,7 +99,12 @@ async fn main() -> Result<()> {
             println!("--------------------------------------------------\n");
         }
 
-        Commands::Server { bind, private_key } => {
+        Commands::Server {
+            bind,
+            private_key,
+            prologue,
+            max_connections,
+        } => {
             let keypair = match private_key {
                 Some(hex_str) => {
                     KeyPair::from_private_hex(&hex_str).context("Kunne ikke laste privat nokkel")?
@@ -105,7 +118,13 @@ async fn main() -> Result<()> {
                 }
             };
 
-            let server = TunnelServer::new(keypair, bind);
+            let mut server = TunnelServer::new(keypair, bind);
+            if let Some(p) = prologue {
+                server = server.with_prologue_str(&p);
+            }
+            if let Some(max) = max_connections {
+                server = server.with_max_connections(max);
+            }
             server.run().await?;
         }
 
