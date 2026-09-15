@@ -137,15 +137,18 @@ Genererer et sikkert X25519 nøkkelpar fra operativsystemets CSPRNG (`OsRng`):
 # Start server på standardport (127.0.0.1:8080) med spesifisert privatnøkkel
 cargo run -- server --bind 127.0.0.1:8080 --private-key <SERVER_PRIVKEY_HEX>
 
-# Eller la serveren generere et midlertidig nøkkelpar ved oppstart:
-cargo run -- server --bind 0.0.0.0:8080
+# Start server med tilpasset domene-prologue og maksimalt 50 samtidige tilkoblinger:
+cargo run -- server --bind 0.0.0.0:8080 --prologue "MyApp_v1" --max-connections 50
 ```
 
 ### 3. Send en sikker enkeltmelding (Klient)
 ```bash
+# Send enkeltmelding med spesifisert server-pubkey, tilpasset prologue og 5s timeout:
 cargo run -- client \
   --connect 127.0.0.1:8080 \
   --server-pubkey <SERVER_PUBKEY_HEX> \
+  --prologue "MyApp_v1" \
+  --timeout 5 \
   --message "Hemmelig payload over Noise E2EE tunnel!"
 ```
 
@@ -170,6 +173,14 @@ Gjennomfører sanntids sikkerhetstester mot live loopback-instans for å verifis
 2. Integritetssjekk og avvisning av manipulerte pakker (MitM Tamper detection).
 3. Anti-Replay blokkering av oppfangede duplikate pakker.
 4. Monoton nonce-isolasjon og overflow-beskyttelse.
+
+### 6. Kjør ytelses-benchmark via CLI
+```bash
+# Kjør benchmark-suiten direkte via CLI eller via example:
+cargo run -- bench
+# eller:
+cargo run --release --example benchmark
+```
 
 ---
 
