@@ -160,9 +160,11 @@ cargo run -- client \
   --interactive
 ```
 I interaktiv modus kan du sende kryptert trafikk i sanntid:
-- `/ping` – Sender et kryptert heartbeat og mottar bekreftet `PONG` fra server.
-- `<tekst>` – Sender ende-til-ende-kryptert melding og mottar ekko-svar.
-- `/quit` eller `exit` – Sender et autentisert `Close`-rammesignal og avslutter sesjonen trygt.
+- `/help` - Viser tilgjengelige kommandoer og syntaks.
+- `/info` - Viser sesjonsinformasjon, måladresse, prologue og aktiv TX-teller.
+- `/ping` - Sender et kryptert heartbeat og mottar bekreftet `PONG` fra server.
+- `<tekst>` - Sender ende-til-ende-kryptert melding og mottar ekko-svar.
+- `/quit` eller `exit` - Sender et autentisert `Close`-rammesignal og avslutter sesjonen trygt.
 
 ### 5. Kjør automatisert sikkerhetsverifikasjon
 ```bash
@@ -208,6 +210,7 @@ async fn main() -> Result<()> {
         .with_max_connections(100);
     assert!(!server.has_active_connections());
     assert!(!server.is_at_capacity());
+    assert_eq!(server.available_capacity(), Some(100));
 
     // 3. Konfigurer klient (eller bruk TunnelClient::from_hex)
     let client = TunnelClient::from_hex(&server_keypair.public_key_hex(), server_addr)?
@@ -219,9 +222,10 @@ async fn main() -> Result<()> {
     // let response = client.send_secure_message("Hemmelig hilsen").await?;
 
     // 5. Zero-I/O / Binær ramme-serialisering med buffer-gjenbruk
-    let frame = WireFrame::data(0, b"Kryptert innhold".to_vec());
+    let raw_payload = b"Kryptert innhold";
+    let frame = WireFrame::data_from_slice(0, raw_payload);
     assert!(frame.is_data());
-    assert_eq!(frame.payload_slice(), b"Kryptert innhold");
+    assert_eq!(frame.payload_slice(), raw_payload);
 
     let mut write_buffer = Vec::with_capacity(128);
     frame.serialize_into(&mut write_buffer);
