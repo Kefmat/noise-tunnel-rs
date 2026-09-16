@@ -232,6 +232,8 @@ impl TunnelClient {
         println!("  INTERAKTIV E2EE NOISE-TUNNEL SESJON ETABLERT         ");
         println!("========================================================");
         println!("Kommandoer:");
+        println!("  /help       - Vis denne hjelpemenyen");
+        println!("  /info       - Vis sesjonsinformasjon og teller");
         println!("  /ping       - Send kryptert heartbeat");
         println!("  /quit, exit - Lukk sesjonen trygt");
         println!("--------------------------------------------------------");
@@ -251,6 +253,23 @@ impl TunnelClient {
             };
 
             if line.is_empty() {
+                continue;
+            }
+
+            if line == "/help" {
+                println!("Tilgjengelige kommandoer:");
+                println!("  /help       - Vis denne hjelpemenyen");
+                println!("  /info       - Vis sesjonsinformasjon og teller");
+                println!("  /ping       - Send kryptert heartbeat");
+                println!("  /quit, exit - Lukk sesjonen trygt");
+                continue;
+            }
+
+            if line == "/info" {
+                println!("Sesjonsinformasjon:");
+                println!("  Server: {}", self.target_addr);
+                println!("  Prolog: {}", String::from_utf8_lossy(&self.prologue));
+                println!("  TX Nonce: {}", tx_cipher.current_nonce());
                 continue;
             }
 
