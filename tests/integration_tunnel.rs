@@ -687,3 +687,32 @@ async fn test_server_from_hex() -> Result<()> {
 
     Ok(())
 }
+
+#[tokio::test]
+async fn test_server_available_capacity_and_wireframe_data_from_slice() -> Result<()> {
+    use noise_tunnel_rs::protocol::WireFrame;
+
+    let keypair = KeyPair::generate();
+    let addr: std::net::SocketAddr = "127.0.0.1:9191".parse()?;
+
+    // Server available_capacity and reset_connections
+    let server = TunnelServer::new(keypair.clone(), addr).with_max_connections(10);
+    assert_eq!(server.available_capacity(), Some(10));
+    assert_eq!(server.active_connections(), 0);
+
+    server.reset_connections();
+    assert_eq!(server.available_capacity(), Some(10));
+
+    // WireFrame data_from_slice constructor
+    let raw_slice = b"Integration test payload slice";
+    let frame = WireFrame::data_from_slice(1234, raw_slice);
+    assert_eq!(frame.nonce(), 1234);
+    assert!(frame.is_data());
+    assert_eq!(frame.payload_slice(), raw_slice);
+
+    let serialized = frame.serialize();
+    let parsed = WireFrame::from_bytes(&serialized)?;
+    assert_eq!(parsed, frame);
+
+    Ok(())
+}
