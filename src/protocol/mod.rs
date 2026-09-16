@@ -119,6 +119,11 @@ impl WireFrame {
         Self::new(MessageType::DataPayload, nonce, payload)
     }
 
+    /// Oppretter en ny DataPayload-ramme fra en byte-slice.
+    pub fn data_from_slice(nonce: u64, slice: &[u8]) -> Self {
+        Self::new(MessageType::DataPayload, nonce, slice.to_vec())
+    }
+
     /// Oppretter en ny Heartbeat-ramme.
     pub fn heartbeat(nonce: u64, payload: Vec<u8>) -> Self {
         Self::new(MessageType::Heartbeat, nonce, payload)
@@ -771,5 +776,15 @@ mod tests {
         assert!(WireFrame::is_valid_payload_size(1024));
         assert!(WireFrame::is_valid_payload_size(max_len));
         assert!(!WireFrame::is_valid_payload_size(max_len + 1));
+    }
+
+    #[test]
+    fn test_wireframe_data_from_slice() {
+        let slice_data = b"slice constructor payload";
+        let frame = WireFrame::data_from_slice(55, slice_data);
+        assert_eq!(frame.nonce(), 55);
+        assert_eq!(frame.msg_type(), MessageType::DataPayload);
+        assert_eq!(frame.payload_slice(), slice_data);
+        assert_eq!(frame.payload_len(), slice_data.len());
     }
 }
