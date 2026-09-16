@@ -384,6 +384,15 @@ pub struct EphemeralKeyPair {
     pub public_key: [u8; KEY_LEN],
 }
 
+impl std::fmt::Debug for EphemeralKeyPair {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EphemeralKeyPair")
+            .field("secret", &"[REDACTED]")
+            .field("public_key", &hex::encode(self.public_key))
+            .finish()
+    }
+}
+
 impl EphemeralKeyPair {
     pub fn generate() -> Self {
         let secret = StaticSecret::random_from_rng(OsRng);
@@ -392,6 +401,16 @@ impl EphemeralKeyPair {
             secret: secret.to_bytes(),
             public_key: *public.as_bytes(),
         }
+    }
+
+    /// Returnerer referanse til den offentlige nøkkelen.
+    pub fn public_key(&self) -> &[u8; KEY_LEN] {
+        &self.public_key
+    }
+
+    /// Returnerer referanse til den offentlige nøkkelen som en byte-slice.
+    pub fn public_slice(&self) -> &[u8] {
+        &self.public_key
     }
 
     pub fn diffie_hellman(&self, peer_public: &[u8; KEY_LEN]) -> [u8; KEY_LEN] {
@@ -607,5 +626,17 @@ mod tests {
 
         assert_eq!(keys.as_client_slice(), &c[..]);
         assert_eq!(keys.as_server_slice(), &s[..]);
+    }
+
+    #[test]
+    fn test_ephemeral_keypair_methods_and_debug() {
+        let ephem = EphemeralKeyPair::generate();
+        assert_eq!(ephem.public_key(), &ephem.public_key);
+        assert_eq!(ephem.public_slice(), &ephem.public_key[..]);
+
+        let debug_str = format!("{:?}", ephem);
+        assert!(debug_str.contains("EphemeralKeyPair"));
+        assert!(debug_str.contains("[REDACTED]"));
+        assert!(debug_str.contains(&hex::encode(ephem.public_key)));
     }
 }
