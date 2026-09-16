@@ -83,6 +83,19 @@ impl TunnelServer {
         }
     }
 
+    /// Returnerer gjenværende kapasitet dersom maks antall forbindelser er konfigurert.
+    pub fn available_capacity(&self) -> Option<usize> {
+        self.max_connections.map(|max| {
+            let current = self.active_connections();
+            max.saturating_sub(current)
+        })
+    }
+
+    /// Tilbakestiller telleren for aktive forbindelser til 0.
+    pub fn reset_connections(&self) {
+        self.active_connections.store(0, Ordering::Relaxed);
+    }
+
     /// Returnerer serverens lytteadresse.
     pub fn bind_addr(&self) -> SocketAddr {
         self.bind_addr
@@ -276,5 +289,47 @@ impl TunnelServer {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_server_capacity_and_reset() {
+        let keypair = KeyPair::generate();
+        let addr = "127.0.0.1:9090".parse().unwrap();
+        let server = TunnelServer::new(keypair, addr).with_max_connections(5);
+
+        assert_eq!(server.max_connections(), Some(5));
+        assert_eq!(server.available_capacity(), Some(5));
+        assert!(!server.is_at_capacity());
+        assert!(!server.has_active_connections());
+
+        server.active_connections.store(3, Ordering::Relaxed);
+        assert_eq!(server.active_connections(), 3);
+        assert_eq!(server.available_capacity(), Some(2));
+        assert!(server.has_active_connections());
+        assert!(!server.is_at_capacity());
+
+        server.active_connections.store(5, Ordering::Relaxed);
+        assert_eq!(server.available_capacity(), Some(0));
+        assert!(server.is_at_capacity());
+
+        server.reset_connections();
+        assert_eq!(server.active_connections(), 0);
+        assert_eq!(server.available_capacity(), Some(5));
+    }
+
+    #[test]
+    fn test_server_unlimited_capacity() {
+        let keypair = KeyPair::generate();
+        let addr = "127.0.0.1:9090".parse().unwrap();
+        let server = TunnelServer::new(keypair, addr);
+
+        assert_eq!(server.max_connections(), None);
+        assert_eq!(server.available_capacity(), None);
+        assert!(!server.is_at_capacity());
     }
 }
