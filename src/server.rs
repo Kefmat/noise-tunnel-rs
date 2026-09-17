@@ -241,6 +241,7 @@ impl TunnelServer {
         let mut rx_cipher = CipherState::new(client_write_key);
         let mut tx_cipher = CipherState::new(server_write_key);
         let mut replay_filter = ReplayFilter::new();
+        let mut session_metrics = crate::stats::SessionMetrics::new();
 
         // 7. Behandle krypterte meldinger fra klienten
         loop {
@@ -251,6 +252,8 @@ impl TunnelServer {
                     break;
                 }
             };
+
+            session_metrics.record_rx(frame.payload_len() + 13);
 
             match frame.msg_type {
                 MessageType::DataPayload => {
@@ -268,6 +271,7 @@ impl TunnelServer {
 
                     let reply_frame =
                         WireFrame::new(MessageType::DataPayload, reply_nonce, encrypted_reply);
+                    session_metrics.record_tx(reply_frame.payload_len() + 13);
                     reply_frame.write_to(&mut stream).await?;
                 }
                 MessageType::Heartbeat => {
@@ -276,6 +280,7 @@ impl TunnelServer {
                     let pong_nonce = tx_cipher.current_nonce();
                     let pong = tx_cipher.encrypt(b"PONG", b"heartbeat")?;
                     let pong_frame = WireFrame::heartbeat(pong_nonce, pong);
+                    session_metrics.record_tx(pong_frame.payload_len() + 13);
                     pong_frame.write_to(&mut stream).await?;
                 }
                 MessageType::Close => {
@@ -287,6 +292,11 @@ impl TunnelServer {
                 }
             }
         }
+
+        info!(
+            "Klient {} sesjon avsluttet. Sesjonsstatistikk: {}",
+            peer_addr, session_metrics
+        );
 
         Ok(())
     }
