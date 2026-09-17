@@ -716,3 +716,34 @@ async fn test_server_available_capacity_and_wireframe_data_from_slice() -> Resul
 
     Ok(())
 }
+
+#[tokio::test]
+async fn test_error_conversions_and_metrics_integration() -> Result<()> {
+    use noise_tunnel_rs::{SessionMetrics, TunnelError};
+
+    // TunnelError tests
+    let io_err = std::io::Error::new(std::io::ErrorKind::ConnectionRefused, "Nettverksfeil");
+    let tunnel_err = TunnelError::from(io_err);
+    assert!(matches!(tunnel_err, TunnelError::Io(_)));
+
+    let custom_err = TunnelError::Timeout("Sesjon svarte ikke".to_string());
+    assert!(custom_err.to_string().contains("Sesjon svarte ikke"));
+
+    // SessionMetrics in live scenario
+    let (server_keys, server_addr) = spawn_test_server().await?;
+    let client = TunnelClient::new(server_keys.public_key, server_addr);
+
+    let mut client_metrics = SessionMetrics::new();
+    let msg = "Metrikk testmelding over tunnel";
+    client_metrics.record_tx(msg.len());
+
+    let reply = client.send_secure_message(msg).await?;
+    client_metrics.record_rx(reply.len());
+
+    assert_eq!(client_metrics.frames_sent(), 1);
+    assert_eq!(client_metrics.frames_received(), 1);
+    assert!(client_metrics.total_bytes() > 0);
+    assert!(client_metrics.idle_duration() < std::time::Duration::from_secs(2));
+
+    Ok(())
+}
