@@ -184,6 +184,18 @@ cargo run -- bench
 cargo run --release --example benchmark
 ```
 
+### 7. Kjør medfølgende kode-eksempler
+```bash
+# 1. Standalone echo server
+cargo run --example echo_server
+
+# 2. Sikker ende-til-ende chat-sesjon
+cargo run --example secure_chat
+
+# 3. Domene-isolasjon og prologue-binding
+cargo run --example custom_prologue
+```
+
 ---
 
 ## Bibliotek-API og Eksempelbruk (Rust SDK)
@@ -193,7 +205,8 @@ cargo run --release --example benchmark
 ```rust
 use anyhow::Result;
 use noise_tunnel_rs::{
-    KeyPair, MessageType, ReplayFilter, SessionKeys, TunnelClient, TunnelServer, WireFrame,
+    KeyPair, MessageType, ReplayFilter, SessionKeys, SessionMetrics, TunnelClient,
+    TunnelError, TunnelServer, WireFrame,
 };
 use std::time::Duration;
 
@@ -238,7 +251,14 @@ async fn main() -> Result<()> {
     replay_filter.validate_and_record(10)?;
     assert_eq!(replay_filter.total_accepted(), 1);
     assert_eq!(replay_filter.total_rejected(), 0);
+    assert_eq!(replay_filter.acceptance_rate(), 1.0);
     println!("Anti-replay status: {}", replay_filter);
+
+    // 7. Sesjonsstatistikk og metrikksporing
+    let mut metrics = SessionMetrics::new();
+    metrics.record_tx(raw_payload.len());
+    metrics.record_rx(raw_payload.len());
+    println!("Sesjonsmetrikker: {}", metrics);
 
     Ok(())
 }
