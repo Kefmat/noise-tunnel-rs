@@ -10,13 +10,17 @@
 //! - [`client`]: Tunnel-klient for asynkrone meldinger og interaktive REPL-sesjoner.
 //! - [`server`]: Multi-klient asynkron tunnel-server med uavhengige sesjoner.
 //! - [`verify`]: Automatiserte krypto- og sårbarhetsverifikasjoner.
+//! - [`error`]: Strukturerte domene-feiltyper (`TunnelError`).
 
 pub mod bench;
 pub mod client;
 pub mod crypto;
+pub mod error;
 pub mod protocol;
 pub mod server;
 pub mod verify;
+
+pub use error::{TunnelError, TunnelResult};
 
 pub use bench::run_benchmark_suite;
 pub use client::TunnelClient;
