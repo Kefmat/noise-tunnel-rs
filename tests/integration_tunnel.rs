@@ -747,3 +747,25 @@ async fn test_error_conversions_and_metrics_integration() -> Result<()> {
 
     Ok(())
 }
+
+#[tokio::test]
+async fn test_crypto_ephemeral_and_cipherstate_exhaustion_integration() -> Result<()> {
+    use noise_tunnel_rs::crypto::{diffie_hellman, CipherState, EphemeralKeyPair, KEY_LEN};
+
+    // 1. Ephemeral key pair agreement with static key
+    let static_peer = KeyPair::generate();
+    let ephem = EphemeralKeyPair::generate();
+
+    let secret_from_ephem = ephem.diffie_hellman(&static_peer.public_key);
+    let secret_from_static = diffie_hellman(&static_peer.private_key, &ephem.public_key);
+    assert_eq!(secret_from_ephem, secret_from_static);
+
+    // 2. CipherState near-exhaustion query
+    let test_key = [0x5Au8; KEY_LEN];
+    let cipher = CipherState::with_nonce(test_key, u64::MAX - 100);
+    assert!(cipher.is_near_exhaustion(200));
+    assert!(!cipher.is_near_exhaustion(50));
+    assert_eq!(cipher.remaining_nonces(), 100);
+
+    Ok(())
+}
