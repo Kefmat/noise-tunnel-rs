@@ -11,6 +11,7 @@
 //! - [`server`]: Multi-klient asynkron tunnel-server med uavhengige sesjoner.
 //! - [`verify`]: Automatiserte krypto- og sårbarhetsverifikasjoner.
 //! - [`error`]: Strukturerte domene-feiltyper (`TunnelError`).
+//! - [`stats`]: Statistikk og metrikker for aktive sesjoner (`SessionMetrics`).
 
 pub mod bench;
 pub mod client;
@@ -18,9 +19,11 @@ pub mod crypto;
 pub mod error;
 pub mod protocol;
 pub mod server;
+pub mod stats;
 pub mod verify;
 
 pub use error::{TunnelError, TunnelResult};
+pub use stats::SessionMetrics;
 
 pub use bench::run_benchmark_suite;
 pub use client::TunnelClient;
