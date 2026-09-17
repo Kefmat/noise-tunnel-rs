@@ -170,9 +170,29 @@ impl CipherState {
         Self { key, nonce: 0 }
     }
 
+    /// Initialiserer CipherState med en gitt nøkkel og start-nonce.
+    pub fn with_nonce(key: [u8; KEY_LEN], nonce: u64) -> Self {
+        Self { key, nonce }
+    }
+
     /// Nåværende nonce-teller.
     pub fn current_nonce(&self) -> u64 {
         self.nonce
+    }
+
+    /// Returnerer gjenværende antall unike noncer før sesjonsnøkkelen må reforhandles.
+    pub fn remaining_nonces(&self) -> u64 {
+        u64::MAX.saturating_sub(self.nonce)
+    }
+
+    /// Sjekker om nonce-rommet er fullstendig oppbrukt (overflow-tilstand).
+    pub fn is_exhausted(&self) -> bool {
+        self.nonce == u64::MAX
+    }
+
+    /// Sjekker om antall gjenværende noncer er under en gitt terskelverdi.
+    pub fn is_near_exhaustion(&self, threshold: u64) -> bool {
+        self.remaining_nonces() < threshold
     }
 
     /// Oppdaterer nøkkelen og nullstiller nonce-telleren (rekeying).
@@ -638,5 +658,25 @@ mod tests {
         assert!(debug_str.contains("EphemeralKeyPair"));
         assert!(debug_str.contains("[REDACTED]"));
         assert!(debug_str.contains(&hex::encode(ephem.public_key)));
+    }
+
+    #[test]
+    fn test_cipher_state_exhaustion_helpers() {
+        let key = [0x99u8; KEY_LEN];
+        let cipher = CipherState::with_nonce(key, 100);
+        assert_eq!(cipher.current_nonce(), 100);
+        assert_eq!(cipher.remaining_nonces(), u64::MAX - 100);
+        assert!(!cipher.is_exhausted());
+        assert!(!cipher.is_near_exhaustion(1000));
+
+        let near_exhausted = CipherState::with_nonce(key, u64::MAX - 5);
+        assert_eq!(near_exhausted.remaining_nonces(), 5);
+        assert!(!near_exhausted.is_exhausted());
+        assert!(near_exhausted.is_near_exhaustion(10));
+
+        let fully_exhausted = CipherState::with_nonce(key, u64::MAX);
+        assert_eq!(fully_exhausted.remaining_nonces(), 0);
+        assert!(fully_exhausted.is_exhausted());
+        assert!(fully_exhausted.is_near_exhaustion(1));
     }
 }
