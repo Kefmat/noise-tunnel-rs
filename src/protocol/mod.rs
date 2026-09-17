@@ -52,6 +52,16 @@ impl MessageType {
         )
     }
 
+    /// Sjekker om meldingstypen er en HandshakeInit-melding.
+    pub fn is_handshake_init(&self) -> bool {
+        *self == MessageType::HandshakeInit
+    }
+
+    /// Sjekker om meldingstypen er en HandshakeResp-melding.
+    pub fn is_handshake_resp(&self) -> bool {
+        *self == MessageType::HandshakeResp
+    }
+
     /// Sjekker om meldingstypen er kryptert brukerdata.
     pub fn is_data(&self) -> bool {
         *self == MessageType::DataPayload
@@ -129,6 +139,11 @@ impl WireFrame {
         Self::new(MessageType::Heartbeat, nonce, payload)
     }
 
+    /// Oppretter en ny Heartbeat-ramme fra en byte-slice.
+    pub fn heartbeat_from_slice(nonce: u64, slice: &[u8]) -> Self {
+        Self::new(MessageType::Heartbeat, nonce, slice.to_vec())
+    }
+
     /// Oppretter en ny Close-ramme.
     pub fn close(nonce: u64) -> Self {
         Self::new(MessageType::Close, nonce, Vec::new())
@@ -137,6 +152,16 @@ impl WireFrame {
     /// Sjekker om rammen representerer en handshake-pakke.
     pub fn is_handshake(&self) -> bool {
         self.msg_type.is_handshake()
+    }
+
+    /// Sjekker om rammen er HandshakeInit.
+    pub fn is_handshake_init(&self) -> bool {
+        self.msg_type.is_handshake_init()
+    }
+
+    /// Sjekker om rammen er HandshakeResp.
+    pub fn is_handshake_resp(&self) -> bool {
+        self.msg_type.is_handshake_resp()
     }
 
     /// Sjekker om rammen er et heartbeat.
@@ -786,5 +811,24 @@ mod tests {
         assert_eq!(frame.msg_type(), MessageType::DataPayload);
         assert_eq!(frame.payload_slice(), slice_data);
         assert_eq!(frame.payload_len(), slice_data.len());
+    }
+
+    #[test]
+    fn test_wireframe_fine_grained_predicates_and_heartbeat_from_slice() {
+        let init_frame = WireFrame::handshake_init(0, vec![1, 2, 3]);
+        assert!(init_frame.is_handshake());
+        assert!(init_frame.is_handshake_init());
+        assert!(!init_frame.is_handshake_resp());
+
+        let resp_frame = WireFrame::handshake_resp(0, vec![4, 5, 6]);
+        assert!(resp_frame.is_handshake());
+        assert!(!resp_frame.is_handshake_init());
+        assert!(resp_frame.is_handshake_resp());
+
+        let ping_slice = b"PING_BYTES";
+        let hb_frame = WireFrame::heartbeat_from_slice(88, ping_slice);
+        assert!(hb_frame.is_heartbeat());
+        assert_eq!(hb_frame.nonce(), 88);
+        assert_eq!(hb_frame.payload_slice(), ping_slice);
     }
 }
