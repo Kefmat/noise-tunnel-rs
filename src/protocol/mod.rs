@@ -460,6 +460,30 @@ impl ReplayFilter {
         self.initialized
     }
 
+    /// Sjekker om glidevinduet er tomt (ikke initialisert ennå).
+    pub fn is_empty(&self) -> bool {
+        !self.initialized
+    }
+
+    /// Returnerer laveste gyldige sekvensnummer som kan aksepteres innenfor nåværende glidevindu.
+    pub fn min_valid_seq(&self) -> u64 {
+        if !self.initialized {
+            0
+        } else {
+            self.last_seq
+                .saturating_sub(self.window_size.saturating_sub(1))
+        }
+    }
+
+    /// Beregner akseptanserate (andel godkjente pakker) som en desimalverdi mellom 0.0 og 1.0.
+    pub fn acceptance_rate(&self) -> f64 {
+        if self.total_seen == 0 {
+            1.0
+        } else {
+            self.total_accepted as f64 / self.total_seen as f64
+        }
+    }
+
     /// Returnerer totalt antall pakker som har blitt validert.
     pub fn total_seen(&self) -> u64 {
         self.total_seen
@@ -830,5 +854,22 @@ mod tests {
         assert!(hb_frame.is_heartbeat());
         assert_eq!(hb_frame.nonce(), 88);
         assert_eq!(hb_frame.payload_slice(), ping_slice);
+    }
+
+    #[test]
+    fn test_replay_filter_bounds_and_acceptance_rate() {
+        let mut filter = ReplayFilter::with_window_size(64);
+        assert!(filter.is_empty());
+        assert_eq!(filter.min_valid_seq(), 0);
+        assert_eq!(filter.acceptance_rate(), 1.0);
+
+        filter.validate_and_record(100).unwrap();
+        assert!(!filter.is_empty());
+        assert_eq!(filter.min_valid_seq(), 100 - 63); // 37
+        assert_eq!(filter.acceptance_rate(), 1.0);
+
+        // Duplikat
+        assert!(filter.validate_and_record(100).is_err());
+        assert_eq!(filter.acceptance_rate(), 0.5);
     }
 }
