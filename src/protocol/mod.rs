@@ -214,6 +214,16 @@ impl WireFrame {
         &self.payload
     }
 
+    /// Konsumerer rammen og returnerer den underliggende payload-bufferen.
+    pub fn into_payload(self) -> Vec<u8> {
+        self.payload
+    }
+
+    /// Deler rammen inn i sine individuelle komponenter `(msg_type, nonce, payload)`.
+    pub fn into_parts(self) -> (MessageType, u64, Vec<u8>) {
+        (self.msg_type, self.nonce, self.payload)
+    }
+
     /// Returnerer nyttelasten som en UTF-8 streng (med lossy konvertering ved ugyldig UTF-8).
     pub fn payload_utf8_lossy(&self) -> std::borrow::Cow<'_, str> {
         String::from_utf8_lossy(&self.payload)
@@ -885,5 +895,18 @@ mod tests {
 
         let invalid_utf8_frame = WireFrame::data(2, vec![0xFF, 0xFE, 0xFD]);
         assert!(invalid_utf8_frame.payload_utf8_lossy().contains('\u{FFFD}'));
+    }
+
+    #[test]
+    fn test_wireframe_into_methods() {
+        let payload = b"consume payload".to_vec();
+        let frame = WireFrame::data(42, payload.clone());
+        assert_eq!(frame.into_payload(), payload);
+
+        let frame2 = WireFrame::heartbeat(99, b"pong".to_vec());
+        let (msg_type, nonce, bytes) = frame2.into_parts();
+        assert_eq!(msg_type, MessageType::Heartbeat);
+        assert_eq!(nonce, 99);
+        assert_eq!(bytes, b"pong");
     }
 }
