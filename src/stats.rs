@@ -88,6 +88,26 @@ impl SessionMetrics {
         self.last_activity.elapsed()
     }
 
+    /// Beregner gjennomsnittlig overføringshastighet i bytes per sekund.
+    pub fn bytes_per_sec(&self) -> f64 {
+        let secs = self.elapsed().as_secs_f64();
+        if secs > 0.0 {
+            self.total_bytes() as f64 / secs
+        } else {
+            0.0
+        }
+    }
+
+    /// Beregner gjennomsnittlig rammegjennomstrømming i rammer per sekund.
+    pub fn frames_per_sec(&self) -> f64 {
+        let secs = self.elapsed().as_secs_f64();
+        if secs > 0.0 {
+            self.total_frames() as f64 / secs
+        } else {
+            0.0
+        }
+    }
+
     /// Tilbakestiller alle tellere og setter starttidspunkt til nåværende tidspunkt.
     pub fn reset(&mut self) {
         let now = Instant::now();
@@ -146,5 +166,17 @@ mod tests {
         assert_eq!(metrics.total_frames(), 0);
         assert_eq!(metrics.bytes_sent(), 0);
         assert_eq!(metrics.bytes_received(), 0);
+    }
+
+    #[test]
+    fn test_session_metrics_rates() {
+        let mut metrics = SessionMetrics::new();
+        metrics.record_tx(1024);
+        metrics.record_rx(2048);
+
+        assert!(metrics.bytes_per_sec() >= 0.0);
+        assert!(metrics.frames_per_sec() >= 0.0);
+        assert_eq!(metrics.total_bytes(), 3072);
+        assert_eq!(metrics.total_frames(), 2);
     }
 }
