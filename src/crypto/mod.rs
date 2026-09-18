@@ -345,6 +345,11 @@ impl SessionKeys {
     pub fn into_parts(self) -> ([u8; KEY_LEN], [u8; KEY_LEN]) {
         (self.client_write_key, self.server_write_key)
     }
+
+    /// Returnerer en ny SessionKeys der klient- og server-skrivenøkler er byttet om.
+    pub fn swapped(&self) -> Self {
+        Self::new(self.server_write_key, self.client_write_key)
+    }
 }
 
 impl From<([u8; KEY_LEN], [u8; KEY_LEN])> for SessionKeys {
@@ -678,5 +683,16 @@ mod tests {
         assert_eq!(fully_exhausted.remaining_nonces(), 0);
         assert!(fully_exhausted.is_exhausted());
         assert!(fully_exhausted.is_near_exhaustion(1));
+    }
+
+    #[test]
+    fn test_session_keys_swapped() {
+        let c = [0x11u8; KEY_LEN];
+        let s = [0x22u8; KEY_LEN];
+        let keys = SessionKeys::new(c, s);
+        let swapped = keys.swapped();
+        assert_eq!(swapped.client_write_key, s);
+        assert_eq!(swapped.server_write_key, c);
+        assert_eq!(swapped.swapped(), keys);
     }
 }
