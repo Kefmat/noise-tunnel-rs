@@ -214,6 +214,11 @@ impl WireFrame {
         &self.payload
     }
 
+    /// Returnerer nyttelasten som en UTF-8 streng (med lossy konvertering ved ugyldig UTF-8).
+    pub fn payload_utf8_lossy(&self) -> std::borrow::Cow<'_, str> {
+        String::from_utf8_lossy(&self.payload)
+    }
+
     /// Returnerer de 9 byte-headerne til rammen ([1 byte type] + [8 bytes nonce]).
     pub fn header_bytes(&self) -> [u8; 9] {
         let mut header = [0u8; 9];
@@ -871,5 +876,14 @@ mod tests {
         // Duplikat
         assert!(filter.validate_and_record(100).is_err());
         assert_eq!(filter.acceptance_rate(), 0.5);
+    }
+
+    #[test]
+    fn test_wireframe_payload_utf8_lossy() {
+        let frame = WireFrame::data(1, b"Hello UTF-8 Tunnel".to_vec());
+        assert_eq!(frame.payload_utf8_lossy(), "Hello UTF-8 Tunnel");
+
+        let invalid_utf8_frame = WireFrame::data(2, vec![0xFF, 0xFE, 0xFD]);
+        assert!(invalid_utf8_frame.payload_utf8_lossy().contains('\u{FFFD}'));
     }
 }
