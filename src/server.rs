@@ -75,6 +75,11 @@ impl TunnelServer {
         self.active_connections() > 0
     }
 
+    /// Sjekker om serveren er i hviletilstand uten noen aktive klientforbindelser.
+    pub fn is_idle(&self) -> bool {
+        self.active_connections() == 0
+    }
+
     /// Sjekker om serveren har nådd maksimalt antall tillatte samtidige forbindelser.
     pub fn is_at_capacity(&self) -> bool {
         match self.max_connections {
@@ -316,20 +321,24 @@ mod tests {
         assert_eq!(server.available_capacity(), Some(5));
         assert!(!server.is_at_capacity());
         assert!(!server.has_active_connections());
+        assert!(server.is_idle());
 
         server.active_connections.store(3, Ordering::Relaxed);
         assert_eq!(server.active_connections(), 3);
         assert_eq!(server.available_capacity(), Some(2));
         assert!(server.has_active_connections());
+        assert!(!server.is_idle());
         assert!(!server.is_at_capacity());
 
         server.active_connections.store(5, Ordering::Relaxed);
         assert_eq!(server.available_capacity(), Some(0));
         assert!(server.is_at_capacity());
+        assert!(!server.is_idle());
 
         server.reset_connections();
         assert_eq!(server.active_connections(), 0);
         assert_eq!(server.available_capacity(), Some(5));
+        assert!(server.is_idle());
     }
 
     #[test]
@@ -341,5 +350,6 @@ mod tests {
         assert_eq!(server.max_connections(), None);
         assert_eq!(server.available_capacity(), None);
         assert!(!server.is_at_capacity());
+        assert!(server.is_idle());
     }
 }
