@@ -234,12 +234,14 @@ impl TunnelClient {
         println!("Kommandoer:");
         println!("  /help       - Vis denne hjelpemenyen");
         println!("  /info       - Vis sesjonsinformasjon og teller");
+        println!("  /stats      - Vis sanntids trafikkstatistikk for sesjonen");
         println!("  /ping       - Send kryptert heartbeat");
         println!("  /quit, exit - Lukk sesjonen trygt");
         println!("--------------------------------------------------------");
 
         let stdin = tokio::io::stdin();
         let mut reader = BufReader::new(stdin).lines();
+        let mut session_metrics = crate::stats::SessionMetrics::new();
 
         loop {
             tokio::io::stdout();
@@ -260,6 +262,7 @@ impl TunnelClient {
                 println!("Tilgjengelige kommandoer:");
                 println!("  /help       - Vis denne hjelpemenyen");
                 println!("  /info       - Vis sesjonsinformasjon og teller");
+                println!("  /stats      - Vis sanntids trafikkstatistikk for sesjonen");
                 println!("  /ping       - Send kryptert heartbeat");
                 println!("  /quit, exit - Lukk sesjonen trygt");
                 continue;
@@ -273,10 +276,17 @@ impl TunnelClient {
                 continue;
             }
 
+            if line == "/stats" {
+                println!("Sesjonsstatistikk:");
+                println!("  {}", session_metrics);
+                continue;
+            }
+
             if line == "/quit" || line == "exit" {
                 println!("Avslutter tunnel-sesjon...");
                 let close_frame =
                     WireFrame::new(MessageType::Close, tx_cipher.current_nonce(), vec![]);
+                session_metrics.record_tx(close_frame.payload_len() + 13);
                 let _ = close_frame.write_to(&mut stream).await;
                 break;
             }
@@ -285,9 +295,11 @@ impl TunnelClient {
                 let tx_nonce = tx_cipher.current_nonce();
                 let encrypted_ping = tx_cipher.encrypt(b"PING", b"heartbeat")?;
                 let frame = WireFrame::new(MessageType::Heartbeat, tx_nonce, encrypted_ping);
+                session_metrics.record_tx(frame.payload_len() + 13);
                 frame.write_to(&mut stream).await?;
 
                 let reply = WireFrame::read_from(&mut stream).await?;
+                session_metrics.record_rx(reply.payload_len() + 13);
                 if reply.msg_type == MessageType::Heartbeat {
                     let decrypted = rx_cipher.decrypt(&reply.payload, b"heartbeat", reply.nonce)?;
                     println!(
@@ -302,9 +314,11 @@ impl TunnelClient {
             let tx_nonce = tx_cipher.current_nonce();
             let encrypted_data = tx_cipher.encrypt(line.as_bytes(), b"tunnel-data")?;
             let frame = WireFrame::new(MessageType::DataPayload, tx_nonce, encrypted_data);
+            session_metrics.record_tx(frame.payload_len() + 13);
             frame.write_to(&mut stream).await?;
 
             let reply_frame = WireFrame::read_from(&mut stream).await?;
+            session_metrics.record_rx(reply_frame.payload_len() + 13);
             if reply_frame.msg_type == MessageType::DataPayload {
                 let decrypted =
                     rx_cipher.decrypt(&reply_frame.payload, b"tunnel-data", reply_frame.nonce)?;
