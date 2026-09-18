@@ -786,3 +786,37 @@ async fn test_server_idle_state_and_wireframe_utf8_integration() -> Result<()> {
 
     Ok(())
 }
+
+#[tokio::test]
+async fn test_metrics_rates_wireframe_parts_and_keys_swapped_integration() -> Result<()> {
+    use noise_tunnel_rs::crypto::{SessionKeys, KEY_LEN};
+    use noise_tunnel_rs::protocol::{MessageType, WireFrame};
+    use noise_tunnel_rs::SessionMetrics;
+
+    // 1. SessionMetrics rates calculation
+    let mut metrics = SessionMetrics::new();
+    metrics.record_tx(500);
+    metrics.record_rx(500);
+    assert!(metrics.bytes_per_sec() >= 0.0);
+    assert!(metrics.frames_per_sec() >= 0.0);
+
+    // 2. WireFrame into_payload and into_parts
+    let frame = WireFrame::heartbeat(777, b"HEARTBEAT_DATA".to_vec());
+    let (msg_type, nonce, payload) = frame.into_parts();
+    assert_eq!(msg_type, MessageType::Heartbeat);
+    assert_eq!(nonce, 777);
+    assert_eq!(payload, b"HEARTBEAT_DATA");
+
+    let data_frame = WireFrame::data(888, b"DATA_PAYLOAD".to_vec());
+    assert_eq!(data_frame.into_payload(), b"DATA_PAYLOAD");
+
+    // 3. SessionKeys swapped
+    let k1 = [0xAAu8; KEY_LEN];
+    let k2 = [0xBBu8; KEY_LEN];
+    let keys = SessionKeys::new(k1, k2);
+    let swapped = keys.swapped();
+    assert_eq!(swapped.client_write_key, k2);
+    assert_eq!(swapped.server_write_key, k1);
+
+    Ok(())
+}
