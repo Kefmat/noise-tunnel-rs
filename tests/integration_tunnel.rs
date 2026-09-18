@@ -769,3 +769,20 @@ async fn test_crypto_ephemeral_and_cipherstate_exhaustion_integration() -> Resul
 
     Ok(())
 }
+
+#[tokio::test]
+async fn test_server_idle_state_and_wireframe_utf8_integration() -> Result<()> {
+    use noise_tunnel_rs::protocol::WireFrame;
+
+    let server_keypair = KeyPair::generate();
+    let addr: std::net::SocketAddr = "127.0.0.1:9292".parse()?;
+    let server = TunnelServer::new(server_keypair, addr);
+
+    assert!(server.is_idle());
+    assert!(!server.has_active_connections());
+
+    let frame = WireFrame::data_from_slice(99, b"Full integration test text");
+    assert_eq!(frame.payload_utf8_lossy(), "Full integration test text");
+
+    Ok(())
+}
