@@ -330,6 +330,21 @@ cargo run -- verify
 
 ---
 
+## Moduloversikt
+
+| Modul | Primærrolle | Hovedtyper / Funksjoner |
+| :--- | :--- | :--- |
+| [`crypto`](src/crypto/mod.rs) | Krypto-primitiver | `KeyPair`, `EphemeralKeyPair`, `CipherState`, `SessionKeys`, `diffie_hellman` |
+| [`protocol`](src/protocol/mod.rs) | Trådformatering & Anti-replay | `WireFrame`, `MessageType`, `ReplayFilter`, `hash_handshake_state` |
+| [`server`](src/server.rs) | Asynkron TCP Server | `TunnelServer` |
+| [`client`](src/client.rs) | Asynkron TCP Klient & REPL | `TunnelClient` |
+| [`error`](src/error.rs) | Domene-feiltyper | `TunnelError`, `TunnelResult` |
+| [`stats`](src/stats.rs) | Sesjonsstatistikk | `SessionMetrics` |
+| [`verify`](src/verify.rs) | Automatisk verifikasjon | `run_security_verification` |
+| [`bench`](src/bench.rs) | Ytelses-benchmarks | `run_benchmark_suite` |
+
+---
+
 ## Lisens
 
 Dette prosjektet er lisensiert under enten **MIT** eller **Apache-2.0** etter eget valg (se [LICENSE](LICENSE) eller [Cargo.toml](Cargo.toml)).
