@@ -245,6 +245,7 @@ async fn main() -> Result<()> {
 
     let parsed_frame = WireFrame::from_bytes(&write_buffer)?;
     assert_eq!(parsed_frame, frame);
+    let (_msg_type, _nonce, _payload) = parsed_frame.into_parts();
 
     // 6. Anti-replay glidevindu med sanntids-metrikker
     let mut replay_filter = ReplayFilter::with_window_size(128);
@@ -254,11 +255,16 @@ async fn main() -> Result<()> {
     assert_eq!(replay_filter.acceptance_rate(), 1.0);
     println!("Anti-replay status: {}", replay_filter);
 
-    // 7. Sesjonsstatistikk og metrikksporing
+    // 7. Sesjonsstatistikk, overføringshastighet og metrikksporing
     let mut metrics = SessionMetrics::new();
     metrics.record_tx(raw_payload.len());
     metrics.record_rx(raw_payload.len());
     println!("Sesjonsmetrikker: {}", metrics);
+    println!(
+        "Båndbredde: {:.2} B/s, Rate: {:.2} fps",
+        metrics.bytes_per_sec(),
+        metrics.frames_per_sec()
+    );
 
     Ok(())
 }
